@@ -10,3 +10,7 @@ mock-chain.json.tmp
 __MACOSX/
 .DS_Store
 Thumbs.db
+
+# Local-only project notes
+CLAUDE.md
+docs/

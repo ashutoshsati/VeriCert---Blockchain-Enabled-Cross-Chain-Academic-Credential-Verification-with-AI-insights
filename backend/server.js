@@ -94,7 +94,7 @@ async function sendVerification(res, credentialHash) {
   }
 
   await logEvent(credentialHash, "verified", "avalanche-fuji", null, null, "Verification requested");
-  const provenance = await ProvenanceEvent.find({ credentialHash }).sort({ timestamp: 1 });
+  const provenance = await ProvenanceEvent.find({ credentialHash }).sort({ timestamp: 1, _id: 1 });
 
   res.json({ credentialHash, verification, metadata, provenance });
 }

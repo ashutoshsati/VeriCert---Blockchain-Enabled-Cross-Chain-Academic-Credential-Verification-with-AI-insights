@@ -53,11 +53,11 @@ app.post("/issue", requireApiKey, async (req, res) => {
 
     // A record that is still pending had its earlier relay fail, so this retries it.
     const { txHash, ccipMessageId } = await chain.issueAndRelay(credentialHash, credential.issuer);
-    record.status = "active";
+    record.status = "relaying";
     await record.save();
-    await logEvent(credentialHash, "relayed", "avalanche-fuji", txHash, ccipMessageId, "Relayed via CCIP");
+    await logEvent(credentialHash, "relayed", "polygon-amoy", txHash, ccipMessageId, "Sent to Avalanche Fuji via CCIP");
 
-    res.json({ success: true, credentialHash, txHash, ccipMessageId });
+    res.json({ success: true, credentialHash, status: "relaying", txHash, ccipMessageId });
   } catch (err) {
     sendError(res, err);
   }
@@ -65,13 +65,38 @@ app.post("/issue", requireApiKey, async (req, res) => {
 
 async function sendVerification(res, credentialHash) {
   const onChain = await chain.verifyOnChain(credentialHash);
-  if (!onChain.found) return res.status(404).json({ error: "Credential not found on chain", credentialHash });
-
   const metadata = await Credential.findOne({ credentialHash });
+
+  if (!onChain.found && metadata?.status === "relaying") {
+    const relayed = await ProvenanceEvent.findOne({ credentialHash, eventType: "relayed" }).sort({ timestamp: -1 });
+    return res.status(202).json({
+      credentialHash,
+      status: "relaying",
+      ccipMessageId: relayed?.ccipMessageId ?? null,
+      message: "Issued on Polygon Amoy and waiting for CCIP delivery to Avalanche Fuji. Try again in a few minutes.",
+    });
+  }
+
+  let verification = onChain;
+  if (metadata?.status === "revoked" && !onChain.revoked) {
+    // The revocation has been sent but has not reached Fuji yet: never report the credential as valid.
+    verification = onChain.found
+      ? { ...onChain, isValid: false, revocationPending: true }
+      : { found: false, isValid: false, revoked: false, revocationPending: true };
+  } else if (!onChain.found) {
+    return res.status(404).json({ error: "Credential not found on chain", credentialHash });
+  }
+
+  if (onChain.found && metadata?.status === "relaying") {
+    metadata.status = "active";
+    await metadata.save();
+    await logEvent(credentialHash, "delivered", "avalanche-fuji", null, null, "Received on Avalanche Fuji");
+  }
+
   await logEvent(credentialHash, "verified", "avalanche-fuji", null, null, "Verification requested");
   const provenance = await ProvenanceEvent.find({ credentialHash }).sort({ timestamp: 1 });
 
-  res.json({ credentialHash, verification: onChain, metadata, provenance });
+  res.json({ credentialHash, verification, metadata, provenance });
 }
 
 app.get("/verify/:hash", async (req, res) => {

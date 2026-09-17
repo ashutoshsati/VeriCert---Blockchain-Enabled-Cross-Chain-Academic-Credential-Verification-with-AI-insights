@@ -56,6 +56,22 @@ function credential(studentId, extra = {}) {
 
 const ADMIN = { apiKey: "test-key" };
 
+// Temporarily replaces a chain function for one test.
+async function withChain(overrides, fn) {
+  const originals = {};
+  for (const [name, impl] of Object.entries(overrides)) {
+    originals[name] = chain[name];
+    chain[name] = impl;
+  }
+  try {
+    return await fn();
+  } finally {
+    Object.assign(chain, originals);
+  }
+}
+
+const fakeRelay = async () => ({ txHash: "0x" + "1".repeat(64), ccipMessageId: "0x" + "2".repeat(64) });
+
 test("issue and revoke require a valid API key", async () => {
   assert.strictEqual((await call("POST", "/issue", { body: credential("AUTH1") })).status, 401);
   assert.strictEqual((await call("POST", "/issue", { body: credential("AUTH1"), apiKey: "wrong" })).status, 401);
@@ -74,16 +90,23 @@ test("invalid input is rejected with 400", async () => {
 test("issued credential verifies by hash (any case) and by document data", async () => {
   const issued = await call("POST", "/issue", { body: credential("V1"), ...ADMIN });
   assert.strictEqual(issued.status, 200);
+  assert.strictEqual(issued.body.status, "relaying");
   const hash = issued.body.credentialHash;
 
   const byHash = await call("GET", "/verify/0x" + hash.slice(2).toUpperCase());
   assert.strictEqual(byHash.status, 200);
   assert.strictEqual(byHash.body.verification.isValid, true);
+  assert.strictEqual(byHash.body.metadata.status, "active");
+  assert.deepStrictEqual(
+    byHash.body.provenance.map((e) => e.eventType),
+    ["issued", "relayed", "delivered", "verified"]
+  );
 
   const messy = credential("V1", { studentName: " jane  doe", year: "2024", courses: ["COMP5001", "COMP6002"] });
   const byDocument = await call("POST", "/verify", { body: messy });
   assert.strictEqual(byDocument.status, 200);
   assert.strictEqual(byDocument.body.credentialHash, hash);
+  assert.strictEqual(await ProvenanceEvent.countDocuments({ credentialHash: hash, eventType: "delivered" }), 1);
 
   const tampered = await call("POST", "/verify", { body: credential("V1", { major: "Medicine" }) });
   assert.strictEqual(tampered.status, 404);
@@ -98,7 +121,7 @@ test("client cannot set status or other internal fields", async () => {
   const issued = await call("POST", "/issue", { body: credential("MASS1", { status: "revoked" }), ...ADMIN });
   assert.strictEqual(issued.status, 200);
   const record = await Credential.findOne({ credentialHash: issued.body.credentialHash });
-  assert.strictEqual(record.status, "active");
+  assert.strictEqual(record.status, "relaying");
 });
 
 test("a failed relay leaves the credential pending and can be retried", async () => {
@@ -117,7 +140,7 @@ test("a failed relay leaves the credential pending and can be retried", async ()
   const retried = await call("POST", "/issue", { body: credential("RETRY1"), ...ADMIN });
   assert.strictEqual(retried.status, 200);
   const hash = retried.body.credentialHash;
-  assert.strictEqual((await Credential.findOne({ credentialHash: hash })).status, "active");
+  assert.strictEqual((await Credential.findOne({ credentialHash: hash })).status, "relaying");
   assert.strictEqual(await ProvenanceEvent.countDocuments({ credentialHash: hash, eventType: "issued" }), 1);
   assert.strictEqual((await call("GET", `/verify/${hash}`)).status, 200);
 });
@@ -143,4 +166,57 @@ test("revoked credential verifies as invalid and cannot be revoked twice", async
   assert.strictEqual(verified.body.metadata.status, "revoked");
 
   assert.strictEqual((await call("POST", `/revoke/${hash}`, ADMIN)).status, 409);
+});
+
+test("verify returns 202 while the CCIP message is still in transit", async () => {
+  const issued = await withChain({ issueAndRelay: fakeRelay }, () =>
+    call("POST", "/issue", { body: credential("TRANSIT1"), ...ADMIN })
+  );
+  assert.strictEqual(issued.status, 200);
+
+  const verified = await call("GET", `/verify/${issued.body.credentialHash}`);
+  assert.strictEqual(verified.status, 202);
+  assert.strictEqual(verified.body.status, "relaying");
+  assert.strictEqual(verified.body.ccipMessageId, "0x" + "2".repeat(64));
+  assert.strictEqual((await Credential.findOne({ studentId: "TRANSIT1" })).status, "relaying");
+});
+
+test("a revoke still in transit makes verification fail closed", async () => {
+  const hash = (await call("POST", "/issue", { body: credential("REVPEND1"), ...ADMIN })).body.credentialHash;
+  assert.strictEqual((await call("GET", `/verify/${hash}`)).body.verification.isValid, true);
+
+  const revoked = await withChain({ revokeAndRelay: fakeRelay }, () => call("POST", `/revoke/${hash}`, ADMIN));
+  assert.strictEqual(revoked.status, 200);
+
+  const verified = await call("GET", `/verify/${hash}`);
+  assert.strictEqual(verified.status, 200);
+  assert.strictEqual(verified.body.verification.isValid, false);
+  assert.strictEqual(verified.body.verification.revocationPending, true);
+});
+
+test("a credential revoked before its issue was delivered verifies as invalid", async () => {
+  const issued = await withChain({ issueAndRelay: fakeRelay }, () =>
+    call("POST", "/issue", { body: credential("REVEARLY1"), ...ADMIN })
+  );
+  const hash = issued.body.credentialHash;
+
+  const revoked = await withChain({ revokeAndRelay: fakeRelay }, () => call("POST", `/revoke/${hash}`, ADMIN));
+  assert.strictEqual(revoked.status, 200);
+
+  const verified = await call("GET", `/verify/${hash}`);
+  assert.strictEqual(verified.status, 200);
+  assert.strictEqual(verified.body.verification.found, false);
+  assert.strictEqual(verified.body.verification.isValid, false);
+  assert.strictEqual(verified.body.verification.revocationPending, true);
+});
+
+test("a pending credential cannot be revoked", async () => {
+  const failed = await withChain({ issueAndRelay: async () => { throw new Error("CCIP unavailable"); } }, () =>
+    call("POST", "/issue", { body: credential("REVPENDING1"), ...ADMIN })
+  );
+  assert.strictEqual(failed.status, 500);
+  const hash = (await Credential.findOne({ studentId: "REVPENDING1" })).credentialHash;
+
+  const revoked = await call("POST", `/revoke/${hash}`, ADMIN);
+  assert.strictEqual(revoked.status, 409);
 });

@@ -9,8 +9,9 @@ const credentialSchema = new mongoose.Schema({
   year: Number,
   courses: [String],
   issuer: String,
-  // "pending" means saved locally but not yet relayed on-chain; re-issuing retries the relay.
-  status: { type: String, enum: ["pending", "active", "revoked"], default: "pending" },
+  // pending: saved, not yet on Amoy (re-issuing retries). relaying: on Amoy, CCIP message in transit.
+  // active: delivered to Fuji. revoked: revocation sent.
+  status: { type: String, enum: ["pending", "relaying", "active", "revoked"], default: "pending" },
   createdAt: { type: Date, default: Date.now },
 });
 

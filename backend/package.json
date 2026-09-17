@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test --test-timeout=120000"
+    "test": "node --test --test-timeout=120000",
+    "smoke:ccip": "node scripts/smoke-ccip.js"
   },
   "keywords": [],
   "author": "",

@@ -14,3 +14,10 @@ Thumbs.db
 # Local-only project notes
 CLAUDE.md
 docs/
+
+# Hardhat build output
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/coverage/
+contracts/flat/

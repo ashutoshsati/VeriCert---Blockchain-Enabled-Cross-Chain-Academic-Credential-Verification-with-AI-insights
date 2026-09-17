@@ -1,0 +1,21 @@
+{
+  "name": "vericert-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VeriCert smart contracts: issuer on Polygon Amoy, receiver on Avalanche Fuji, relayed by Chainlink CCIP",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "flatten": "hardhat run scripts/flatten.js",
+    "deploy:testnets": "hardhat run scripts/deploy.js"
+  },
+  "devDependencies": {
+    "@chainlink/contracts-ccip": "1.6.2",
+    "@chainlink/local": "0.2.9",
+    "@nomicfoundation/hardhat-toolbox": "5.0.0",
+    "@openzeppelin/contracts": "5.6.1",
+    "dotenv": "17.4.2",
+    "hardhat": "2.29.1",
+    "solc": "0.8.24"
+  }
+}

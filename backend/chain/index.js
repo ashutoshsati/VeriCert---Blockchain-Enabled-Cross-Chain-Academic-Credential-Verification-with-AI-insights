@@ -1,6 +1,9 @@
-// Picks the blockchain implementation from CHAIN_MODE: "mock" (default, local JSON file).
+// Picks the blockchain implementation from CHAIN_MODE:
+//   mock (default) - local JSON file, instant delivery
+//   ccip           - VeriCert on Polygon Amoy relaying to Receiver on Avalanche Fuji via Chainlink CCIP
 const IMPLEMENTATIONS = {
   mock: "./mock",
+  ccip: "./ccip",
 };
 
 const mode = process.env.CHAIN_MODE || "mock";

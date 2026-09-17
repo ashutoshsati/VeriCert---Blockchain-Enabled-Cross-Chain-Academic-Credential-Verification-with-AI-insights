@@ -21,11 +21,17 @@ test("CHAIN_MODE=mock selects the mock chain", () => {
 });
 
 test("an unknown CHAIN_MODE fails with a clear message", () => {
-  assert.throws(() => loadChain("bogus"), /CHAIN_MODE must be one of: mock/);
+  assert.throws(() => loadChain("bogus"), /CHAIN_MODE must be one of: mock, ccip/);
 });
 
 test("the mock chain needs no extra environment variables", () => {
   const mock = require("../chain/mock");
   assert.deepStrictEqual(mock.requiredEnv, []);
   assert.strictEqual(typeof mock.close, "function");
+});
+
+test("CHAIN_MODE=ccip selects the CCIP chain and lists its settings", () => {
+  const ccip = loadChain("ccip");
+  assert.strictEqual(ccip, require("../chain/ccip"));
+  assert.deepStrictEqual(ccip.requiredEnv, ["AMOY_RPC_URL", "FUJI_RPC_URL", "ISSUER_PRIVATE_KEY", "VERICERT_ADDRESS", "RECEIVER_ADDRESS"]);
 });

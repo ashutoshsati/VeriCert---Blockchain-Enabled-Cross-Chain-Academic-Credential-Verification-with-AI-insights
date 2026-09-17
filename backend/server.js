@@ -31,10 +31,20 @@ function requireApiKey(req, res, next) {
   next();
 }
 
-function sendError(res, err) {
+// Public routes must not echo raw error messages for unexpected 500s (a malformed ISSUER_PRIVATE_KEY,
+// for example, would otherwise reach anonymous /verify callers via ethers' own error text). The
+// API-key-protected admin routes (/issue, /revoke) keep exposing err.message: those errors are
+// meant to explain the failure to whoever holds the admin key (e.g. "not an approved issuer").
+function sendError(res, err, { exposeMessage = false } = {}) {
   if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
   if (err.code === 11000) return res.status(409).json({ error: "This credential already exists" });
-  res.status(500).json({ error: err.message });
+  console.error(err);
+  if (exposeMessage) return res.status(500).json({ error: err.message });
+  res.status(500).json({ error: "Internal server error" });
+}
+
+function sendAdminError(res, err) {
+  sendError(res, err, { exposeMessage: true });
 }
 
 app.post("/issue", requireApiKey, async (req, res) => {
@@ -59,7 +69,7 @@ app.post("/issue", requireApiKey, async (req, res) => {
 
     res.json({ success: true, credentialHash, status: "relaying", txHash, ccipMessageId });
   } catch (err) {
-    sendError(res, err);
+    sendAdminError(res, err);
   }
 });
 
@@ -134,19 +144,31 @@ app.post("/revoke/:hash", requireApiKey, async (req, res) => {
 
     res.json({ success: true, credentialHash });
   } catch (err) {
-    sendError(res, err);
+    sendAdminError(res, err);
   }
 });
 
 // Malformed JSON bodies and other errors thrown by middleware.
 app.use((err, req, res, next) => {
-  res.status(err.status || 500).json({ error: err.message });
+  const status = err.status || 500;
+  if (status === 500) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+  res.status(status).json({ error: err.message });
 });
 
 if (require.main === module) {
   const missing = ["MONGODB_URI", "ADMIN_API_KEY", ...chain.requiredEnv].filter((name) => !process.env[name]);
   if (missing.length) {
     console.error(`Missing required environment variables: ${missing.join(", ")} (see .env.example)`);
+    process.exit(1);
+  }
+
+  try {
+    chain.checkConfig();
+  } catch (err) {
+    console.error(err.message);
     process.exit(1);
   }
 

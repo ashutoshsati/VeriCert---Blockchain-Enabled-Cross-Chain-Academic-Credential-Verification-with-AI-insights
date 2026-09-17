@@ -11,6 +11,7 @@ const LOG_SEARCH_MAX_BLOCKS = 50_000; // about a day on Amoy
 // the call actually succeeds cheaply) and the failure carries no revert data to explain instead.
 const SEND_GAS_LIMIT = 1_500_000n;
 const GAS_ESTIMATE_PADDING_PERCENT = 120n; // headroom over the estimate, in case on-chain conditions shift slightly
+const INVALID_KEY_MESSAGE = "ISSUER_PRIVATE_KEY is not a valid private key";
 
 const VERICERT_ABI = [
   "function issue(bytes32 hash) payable returns (bytes32 messageId)",
@@ -46,6 +47,17 @@ const requiredEnv = ["AMOY_RPC_URL", "FUJI_RPC_URL", "ISSUER_PRIVATE_KEY", "VERI
 
 let clients;
 
+// Never let a malformed ISSUER_PRIVATE_KEY reach a caller via its original ethers error message
+// (e.g. "invalid BytesLike value (argument="value", value="0x<the key>", ...)"), since that message
+// nearly reproduces the key itself. Anonymous callers can trigger this lazily through /verify.
+function buildWallet(provider) {
+  try {
+    return new ethers.Wallet(process.env.ISSUER_PRIVATE_KEY, provider);
+  } catch {
+    throw new Error(INVALID_KEY_MESSAGE);
+  }
+}
+
 function getClients() {
   if (!clients) {
     // ethers v6 caches reads (incl. getTransactionCount) for 250ms by default; a fast-mining local
@@ -54,7 +66,7 @@ function getClients() {
     // costs a few extra RPC round trips, which is negligible against real Amoy/Fuji block times.
     const amoy = new ethers.JsonRpcProvider(process.env.AMOY_RPC_URL, undefined, { cacheTimeout: -1 });
     const fuji = new ethers.JsonRpcProvider(process.env.FUJI_RPC_URL, undefined, { cacheTimeout: -1 });
-    const wallet = new ethers.Wallet(process.env.ISSUER_PRIVATE_KEY, amoy);
+    const wallet = buildWallet(amoy);
     clients = {
       providers: [amoy, fuji],
       veriCert: new ethers.Contract(process.env.VERICERT_ADDRESS, VERICERT_ABI, wallet),
@@ -62,6 +74,11 @@ function getClients() {
     };
   }
   return clients;
+}
+
+// Validates settings eagerly (e.g. at server startup) instead of waiting for the first lazy getClients() call.
+function checkConfig() {
+  buildWallet();
 }
 
 function explain(err, veriCert) {
@@ -180,4 +197,4 @@ async function close() {
   clients = undefined;
 }
 
-module.exports = { requiredEnv, issueAndRelay, verifyOnChain, revokeAndRelay, close, VERICERT_ABI, RECEIVER_ABI };
+module.exports = { requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close, VERICERT_ABI, RECEIVER_ABI };

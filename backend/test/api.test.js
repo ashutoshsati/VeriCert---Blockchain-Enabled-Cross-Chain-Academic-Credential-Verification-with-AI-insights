@@ -134,6 +134,8 @@ test("a failed relay leaves the credential pending and can be retried", async ()
     chain.issueAndRelay = original;
   }
   assert.strictEqual(failed.status, 500);
+  // Admin routes (API-key-protected) keep exposing the underlying chain error, unlike public routes.
+  assert.strictEqual(failed.body.error, "CCIP unavailable");
   const pending = await Credential.findOne({ studentId: "RETRY1" });
   assert.strictEqual(pending.status, "pending");
 
@@ -208,6 +210,22 @@ test("a credential revoked before its issue was delivered verifies as invalid", 
   assert.strictEqual(verified.body.verification.found, false);
   assert.strictEqual(verified.body.verification.isValid, false);
   assert.strictEqual(verified.body.verification.revocationPending, true);
+});
+
+test("a public /verify 500 does not leak the underlying error message", async () => {
+  const secretError = async () => {
+    throw new Error("ISSUER_PRIVATE_KEY=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+  };
+  const [getResult, postResult] = await withChain({ verifyOnChain: secretError }, () =>
+    Promise.all([
+      call("GET", `/verify/0x${"a".repeat(64)}`),
+      call("POST", "/verify", { body: credential("SECRET1") }),
+    ])
+  );
+  assert.strictEqual(getResult.status, 500);
+  assert.deepStrictEqual(getResult.body, { error: "Internal server error" });
+  assert.strictEqual(postResult.status, 500);
+  assert.deepStrictEqual(postResult.body, { error: "Internal server error" });
 });
 
 test("a pending credential cannot be revoked", async () => {

@@ -42,6 +42,61 @@ describe("CCIP chain module", { skip }, () => {
   });
 });
 
+describe("ccip config validation (no Hardhat node needed)", () => {
+  function freshCcip() {
+    delete require.cache[require.resolve("../chain/ccip")];
+    return require("../chain/ccip");
+  }
+
+  function withEnv(overrides, fn) {
+    const originals = {};
+    for (const key of Object.keys(overrides)) originals[key] = process.env[key];
+    Object.assign(process.env, overrides);
+    return Promise.resolve()
+      .then(fn)
+      .finally(() => {
+        for (const [key, value] of Object.entries(originals)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+        delete require.cache[require.resolve("../chain/ccip")];
+      });
+  }
+
+  it("checkConfig rejects a malformed ISSUER_PRIVATE_KEY with a generic message", async () => {
+    const badKey = "0x" + "1".repeat(63); // one hex digit short of a valid 32-byte key
+    await withEnv({ ISSUER_PRIVATE_KEY: badKey }, () => {
+      const ccip = freshCcip();
+      assert.throws(() => ccip.checkConfig(), (err) => {
+        assert.strictEqual(err.message, "ISSUER_PRIVATE_KEY is not a valid private key");
+        assert.ok(!err.message.includes(badKey.slice(2)), "must not echo the key");
+        return true;
+      });
+    });
+  });
+
+  it("verifyOnChain rejects with the same generic message for a malformed key, not the ethers error", async () => {
+    const badKey = "0x" + "2".repeat(63);
+    await withEnv(
+      {
+        AMOY_RPC_URL: "http://127.0.0.1:1",
+        FUJI_RPC_URL: "http://127.0.0.1:1",
+        ISSUER_PRIVATE_KEY: badKey,
+        VERICERT_ADDRESS: ethers.ZeroAddress,
+        RECEIVER_ADDRESS: ethers.ZeroAddress,
+      },
+      async () => {
+        const ccip = freshCcip();
+        await assert.rejects(ccip.verifyOnChain(ethers.id("whatever")), (err) => {
+          assert.strictEqual(err.message, "ISSUER_PRIVATE_KEY is not a valid private key");
+          assert.ok(!err.message.includes(badKey.slice(2)), "must not echo the key");
+          return true;
+        });
+      }
+    );
+  });
+});
+
 describe("CHAIN_MODE=ccip end to end", { skip }, () => {
   let node, provider, owner, veriCert, mongo, server, baseUrl, tempDir, chain;
 

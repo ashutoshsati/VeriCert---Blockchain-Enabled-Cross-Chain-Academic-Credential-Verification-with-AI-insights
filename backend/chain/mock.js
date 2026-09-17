@@ -55,6 +55,9 @@ async function revokeAndRelay(credentialHash) {
 
 const requiredEnv = [];
 
+// No settings to validate; kept so both chain implementations share the same interface.
+function checkConfig() {}
+
 async function close() {}
 
-module.exports = { requiredEnv, issueAndRelay, verifyOnChain, revokeAndRelay, close };
+module.exports = { requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close };

@@ -20,12 +20,17 @@ async function main() {
 
   const deadline = Date.now() + TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const result = await chain.verifyOnChain(hash);
-    if (result.found) {
-      console.log("Delivered to Avalanche Fuji:", result);
-      return;
+    try {
+      const result = await chain.verifyOnChain(hash);
+      if (result.found) {
+        console.log("Delivered to Avalanche Fuji:", result);
+        return;
+      }
+      console.log("Not on Fuji yet; checking again in 30 seconds...");
+    } catch (err) {
+      // A single transient RPC error should not end the 40-minute wait; keep polling until the deadline.
+      console.log(`Check failed (${err.message}); retrying in 30 seconds...`);
     }
-    console.log("Not on Fuji yet; checking again in 30 seconds...");
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
   throw new Error("Not delivered after 40 minutes; check the CCIP Explorer link above");

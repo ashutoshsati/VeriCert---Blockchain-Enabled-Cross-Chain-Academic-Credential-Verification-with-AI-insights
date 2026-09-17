@@ -11,6 +11,7 @@ const LOG_SEARCH_MAX_BLOCKS = 50_000; // about a day on Amoy
 // the call actually succeeds cheaply) and the failure carries no revert data to explain instead.
 const SEND_GAS_LIMIT = 1_500_000n;
 const GAS_ESTIMATE_PADDING_PERCENT = 120n; // headroom over the estimate, in case on-chain conditions shift slightly
+const SEND_CONFIRM_TIMEOUT_MS = 180_000; // tx.wait() would otherwise hang forever on a dropped/underpriced tx
 const INVALID_KEY_MESSAGE = "ISSUER_PRIVATE_KEY is not a valid private key";
 
 const VERICERT_ABI = [
@@ -145,7 +146,7 @@ async function send(veriCert, method, action, eventName, credentialHash) {
   }
 
   const tx = await veriCert[method](credentialHash, { value, gasLimit });
-  const receipt = await tx.wait();
+  const receipt = await tx.wait(1, SEND_CONFIRM_TIMEOUT_MS);
   const address = (await veriCert.getAddress()).toLowerCase();
   const event = receipt.logs
     .filter((log) => log.address.toLowerCase() === address)

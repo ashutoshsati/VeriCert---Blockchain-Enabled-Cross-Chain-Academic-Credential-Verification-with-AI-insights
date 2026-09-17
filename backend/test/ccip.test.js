@@ -236,10 +236,14 @@ describe("CHAIN_MODE=ccip end to end", { skip }, () => {
     // Explicit gasLimit: this local Hardhat node's estimateGas cannot reliably size a revoke() call
     // (it is well under 500k gas in practice; see chain/ccip.js's own SEND_GAS_LIMIT for the same fix).
     const receipt = await (await veriCert.revoke(hash, { gasLimit: 1_500_000 })).wait();
+    const sent = receipt.logs.map((log) => veriCert.interface.parseLog(log)).find((e) => e?.name === "CredentialRevoked");
+    const nonceBefore = await provider.getTransactionCount(owner.address);
 
     const result = await chain.revokeAndRelay(hash);
 
     assert.strictEqual(result.txHash, receipt.hash);
+    assert.strictEqual(result.ccipMessageId, sent.args.messageId);
+    assert.strictEqual(await provider.getTransactionCount(owner.address), nonceBefore, "must not send a second transaction");
   });
 
   it("explains when the backend wallet is not an approved issuer", async () => {

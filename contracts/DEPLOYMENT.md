@@ -17,7 +17,7 @@ This puts `VeriCert` on Polygon Amoy and `Receiver` on Avalanche Fuji, connects 
 2. Add both networks (search "Amoy" and "Fuji" on https://chainlist.org with "Include Testnets" ticked, then "Add to MetaMask").
 3. Get test tokens:
    - Amoy POL: https://faucet.polygon.technology
-   - Fuji AVAX: https://core.app/tools/testnet-faucet
+   - Fuji AVAX: https://core.app/tools/testnet-faucet (this faucet may require a mainnet AVAX balance or a coupon code; if it does not work, use https://faucets.chain.link/fuji instead)
    About 0.5 POL and 0.5 AVAX is plenty.
 
 ## 2. Build the Remix files
@@ -75,6 +75,8 @@ ISSUER_PRIVATE_KEY=<your MetaMask private key>
 VERICERT_ADDRESS=<from step 4>
 RECEIVER_ADDRESS=<from step 5>
 ```
+
+Use a separate MongoDB database for `CHAIN_MODE=ccip` than for `CHAIN_MODE=mock` (a different database name in `MONGODB_URI`, e.g. `vericert-ccip`) — records created under one mode are not visible in the other, so switching modes against the same database leaves stale records that 404 or stay pending forever.
 
 ## 8. Smoke test
 

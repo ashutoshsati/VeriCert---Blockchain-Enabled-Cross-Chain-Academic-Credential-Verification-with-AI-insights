@@ -119,7 +119,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  const missing = ["MONGODB_URI", "ADMIN_API_KEY"].filter((name) => !process.env[name]);
+  const missing = ["MONGODB_URI", "ADMIN_API_KEY", ...chain.requiredEnv].filter((name) => !process.env[name]);
   if (missing.length) {
     console.error(`Missing required environment variables: ${missing.join(", ")} (see .env.example)`);
     process.exit(1);

@@ -10,6 +10,8 @@ const { MongoMemoryServer } = require("mongodb-memory-server");
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "vericert-"));
 process.env.MOCK_CHAIN_FILE = path.join(tempDir, "mock-chain.json");
 process.env.ADMIN_API_KEY = "test-key";
+// dotenv never overrides variables that are already set, so a developer's CHAIN_MODE=ccip in .env cannot leak in.
+process.env.CHAIN_MODE = "mock";
 
 const app = require("../server");
 const chain = require("../chain");
@@ -124,8 +126,8 @@ test("mock chain state survives a restart", async () => {
   const issued = await call("POST", "/issue", { body: credential("PERSIST1"), ...ADMIN });
   const hash = issued.body.credentialHash;
 
-  delete require.cache[require.resolve("../chain")];
-  const reloadedChain = require("../chain");
+  delete require.cache[require.resolve("../chain/mock")];
+  const reloadedChain = require("../chain/mock");
   const record = await reloadedChain.verifyOnChain(hash);
   assert.strictEqual(record.found, true);
   assert.strictEqual(record.isValid, true);

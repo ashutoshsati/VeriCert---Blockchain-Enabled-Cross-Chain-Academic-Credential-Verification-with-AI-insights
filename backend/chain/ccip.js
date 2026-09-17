@@ -6,9 +6,11 @@ const ACTION_REVOKE = 2;
 const FEE_BUFFER_PERCENT = 110n; // the contract refunds anything above the actual fee
 const LOG_SEARCH_WINDOW = 2_000; // blocks per eth_getLogs call (public RPCs cap the range)
 const LOG_SEARCH_MAX_BLOCKS = 50_000; // about a day on Amoy
-// issue/revoke cost well under 500k gas in practice; a fixed limit skips automatic estimateGas,
-// which some RPCs (including local Hardhat nodes) fail to compute reliably for this call shape.
+// issue/revoke cost well under 500k gas in practice. Used only as a last-resort gasLimit when
+// estimateGas itself cannot be computed (observed on a local Hardhat node for revoke(), even though
+// the call actually succeeds cheaply) and the failure carries no revert data to explain instead.
 const SEND_GAS_LIMIT = 1_500_000n;
+const GAS_ESTIMATE_PADDING_PERCENT = 120n; // headroom over the estimate, in case on-chain conditions shift slightly
 
 const VERICERT_ABI = [
   "function issue(bytes32 hash) payable returns (bytes32 messageId)",
@@ -63,12 +65,14 @@ function getClients() {
 }
 
 function explain(err, veriCert) {
+  // send()'s staticCall pre-check (see below) decodes a predictable revert into err.revert directly,
+  // so this is the common case. The fallbacks below cover the rarer paths where ethers does not: a
+  // raw estimateGas CALL_EXCEPTION carries revert bytes at the top-level err.data instead (ethers v6
+  // never runs ABI-based decoding for a plain estimateGas/send() call, only for staticCall); and on a
+  // local Hardhat node specifically, a transaction that reverts on broadcast (e.g. a race between the
+  // staticCall above and the actual send) is rejected immediately from eth_sendRawTransaction as a
+  // plain UNKNOWN_ERROR, with the revert bytes nested at err.error.data.data instead.
   let name = err?.revert?.name;
-  // ethers v6 only auto-decodes custom errors via a contract's ABI for staticCall/view paths, never
-  // for a plain state-changing send() (err.revert stays null there). And because issue()/revoke() are
-  // sent with an explicit gasLimit (see SEND_GAS_LIMIT) to skip an unreliable estimateGas, a revert
-  // surfaces from eth_sendRawTransaction itself as a plain UNKNOWN_ERROR, where ethers nests the raw
-  // revert bytes at err.error.data.data instead of the top-level err.data used for a CALL_EXCEPTION.
   const data = err?.data ?? err?.error?.data?.data;
   if (!name && data) {
     try {
@@ -103,7 +107,27 @@ async function recover(veriCert, filter) {
 
 async function send(veriCert, method, action, eventName, credentialHash) {
   const fee = await veriCert.quoteFee(action, credentialHash);
-  const tx = await veriCert[method](credentialHash, { value: (fee * FEE_BUFFER_PERCENT) / 100n, gasLimit: SEND_GAS_LIMIT });
+  const value = (fee * FEE_BUFFER_PERCENT) / 100n;
+
+  // Simulate before broadcasting: staticCall decodes a predictable revert (NotIssuer, ReceiverNotSet,
+  // AlreadyIssued/AlreadyRevoked, InsufficientFee) into err.revert, on every network, at zero gas cost.
+  // Without this, a call that will revert would only be caught after being mined on a public RPC
+  // (burning real gas) and tx.wait() cannot recover any revert reason from a mined-but-failed receipt.
+  await veriCert[method].staticCall(credentialHash, { value });
+
+  // Prefer the real gas estimate (padded for headroom) over the fixed fallback, so a normal, cheap
+  // call does not over-reserve balance against gasLimit * maxFeePerGas. Only fall back to the fixed
+  // limit when estimateGas itself cannot be computed and carries no revert data to explain (the local
+  // Hardhat node's revoke() estimation bug); a real revert with data is rethrown as-is.
+  let gasLimit;
+  try {
+    gasLimit = ((await veriCert[method].estimateGas(credentialHash, { value })) * GAS_ESTIMATE_PADDING_PERCENT) / 100n;
+  } catch (err) {
+    if (err?.data || err?.error?.data?.data) throw err;
+    gasLimit = SEND_GAS_LIMIT;
+  }
+
+  const tx = await veriCert[method](credentialHash, { value, gasLimit });
   const receipt = await tx.wait();
   const address = (await veriCert.getAddress()).toLowerCase();
   const event = receipt.logs

@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.log
+
+# Mock chain state (local runtime data)
+mock-chain.json
+mock-chain.json.tmp
+
+# OS junk
+__MACOSX/
+.DS_Store
+Thumbs.db

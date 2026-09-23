@@ -6,6 +6,7 @@ import requests
 
 from api import ApiResult, VeriCertApi
 from credential_file import build_file, parse_courses, read_file
+from theme import check_style
 from verdict import ERROR, INVALID_INPUT, NOT_FOUND, RELAYING, REVOKED, TAMPERED, VALID, from_explain, interpret, unavailable_message
 
 CREDENTIAL = {
@@ -161,6 +162,15 @@ class CredentialFileTest(unittest.TestCase):
     def test_parse_courses(self):
         self.assertEqual(parse_courses(" COMP6002, COMP5001\nCOMP3010,, \n"), ["COMP6002", "COMP5001", "COMP3010"])
         self.assertEqual(parse_courses(""), [])
+
+
+
+class CheckStyleTest(unittest.TestCase):
+    def test_icons_follow_status_and_severity(self):
+        self.assertEqual(check_style({"status": "passed", "severity": None}), ("✓", "pass"))
+        self.assertEqual(check_style({"status": "skipped", "severity": None}), ("–", "skip"))
+        self.assertEqual(check_style({"status": "failed", "severity": "warning"}), ("⚠", "warn"))
+        self.assertEqual(check_style({"status": "failed", "severity": "critical"}), ("✕", "critical"))
 
 
 if __name__ == "__main__":

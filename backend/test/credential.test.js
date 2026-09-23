@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { ValidationError, parseCredential, hashCredential, normalizeHash } = require("../credential");
+const { ValidationError, parseCredential, hashCredential, normalizeHash, canonicalCredential } = require("../credential");
 
 const base = {
   studentName: "Jane Doe",
@@ -61,4 +61,17 @@ test("normalizeHash lowercases valid hashes and rejects invalid ones", () => {
   assert.strictEqual(normalizeHash("0X" + hash.slice(2)), hash);
   assert.throws(() => normalizeHash("0x123"), ValidationError);
   assert.throws(() => normalizeHash("not-a-hash"), ValidationError);
+});
+
+test("canonicalCredential lowercases text and sorts courses", () => {
+  const parsed = parseCredential({ ...base, degree: "BACHELOR of Science", courses: ["COMP6002", "comp5001"] });
+  assert.deepStrictEqual(canonicalCredential(parsed), {
+    studentName: "jane doe",
+    studentId: "s123",
+    degree: "bachelor of science",
+    major: "computer science",
+    year: 2024,
+    courses: ["comp5001", "comp6002"],
+    issuer: "example university",
+  });
 });

@@ -54,6 +54,28 @@ section[data-testid="stSidebar"] { background-color: #0e0e10; border-right: 1px 
 .vc-field { background: #18181b; border: 1px solid #27272a; border-radius: 6px; padding: 10px 12px; }
 .vc-field-value { color: #f4f4f5; font-size: 0.9rem; margin-top: 2px; word-break: break-word; }
 
+.vc-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.vc-check { display: flex; gap: 12px; align-items: flex-start; background: #18181b; border: 1px solid #27272a;
+  border-radius: 6px; padding: 10px 12px; }
+.vc-check-icon { font-family: 'JetBrains Mono', monospace; width: 1.2em; text-align: center; font-weight: 600; }
+.vc-check-pass .vc-check-icon { color: #34d399; }
+.vc-check-warn { border-color: rgba(245,158,11,0.35); }
+.vc-check-warn .vc-check-icon { color: #f59e0b; }
+.vc-check-critical { border-color: rgba(248,113,113,0.35); }
+.vc-check-critical .vc-check-icon { color: #f87171; }
+.vc-check-skip .vc-check-icon { color: #71717a; }
+.vc-check-label { color: #f4f4f5; font-size: 0.88rem; font-weight: 500; }
+.vc-check-detail { color: #a1a1aa; font-size: 0.8rem; margin-top: 2px; }
+
+.vc-ai { background: #18181b; border: 1px solid rgba(16,185,129,0.35); border-radius: 8px; padding: 16px 20px; margin: 8px 0 16px 0; }
+.vc-ai-title { font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; font-weight: 600; color: #34d399; }
+.vc-ai-sub { font-size: 0.75rem; color: #71717a; margin-bottom: 10px; }
+.vc-ai-summary { color: #e4e4e7; font-size: 0.92rem; line-height: 1.6; margin-bottom: 10px; }
+.vc-ai-obs { font-size: 0.85rem; color: #d4d4d8; margin: 4px 0; }
+.vc-ai-obs.warning::before { content: "⚠ "; color: #f59e0b; }
+.vc-ai-obs.info::before { content: "• "; color: #71717a; }
+.vc-ai-rec { font-size: 0.88rem; color: #f4f4f5; margin-top: 10px; border-top: 1px solid #27272a; padding-top: 10px; }
+
 </style>
 """
 
@@ -121,6 +143,41 @@ def fields(pairs: list[tuple[str, str]]):
         for label, value in pairs
     )
     _html(f'<div class="vc-fields">{cells}</div>')
+
+
+def check_style(check: dict) -> tuple[str, str]:
+    if check.get("status") == "passed":
+        return "✓", "pass"
+    if check.get("status") == "skipped":
+        return "–", "skip"
+    return ("✕", "critical") if check.get("severity") == "critical" else ("⚠", "warn")
+
+
+def checks_panel(checks: list[dict]):
+    rows = []
+    for check in checks:
+        icon, style = check_style(check)
+        rows.append(
+            f'<div class="vc-check vc-check-{style}"><span class="vc-check-icon">{icon}</span><div>'
+            f'<div class="vc-check-label">{escape(check.get("label", ""))}</div>'
+            f'<div class="vc-check-detail">{escape(check.get("detail", ""))}</div></div></div>'
+        )
+    _html(f'<div class="vc-checks">{"".join(rows)}</div>')
+
+
+def ai_card(explanation: dict, model: str | None, cached: bool):
+    observations = "".join(
+        f'<div class="vc-ai-obs {"warning" if item.get("severity") == "warning" else "info"}">{escape(item.get("text", ""))}</div>'
+        for item in explanation.get("observations", [])
+    )
+    saved = " · saved report" if cached else ""
+    _html(
+        f'<div class="vc-ai"><div class="vc-ai-title">AI summary</div>'
+        f'<div class="vc-ai-sub">Written by OpenAI {escape(model or "")}{saved}. '
+        f"It explains the checks above; it doesn't decide them.</div>"
+        f'<div class="vc-ai-summary">{escape(explanation.get("summary", ""))}</div>{observations}'
+        f'<div class="vc-ai-rec"><strong>Recommendation:</strong> {escape(explanation.get("recommendation", ""))}</div></div>'
+    )
 
 
 def short_hash(value: str | None) -> str:

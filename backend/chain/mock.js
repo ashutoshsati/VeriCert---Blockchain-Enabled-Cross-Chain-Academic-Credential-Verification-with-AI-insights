@@ -53,6 +53,11 @@ async function revokeAndRelay(credentialHash) {
   return { txHash: fakeHash("cc"), ccipMessageId: fakeHash("dd") };
 }
 
+// The mock chain has no contracts or events to show.
+async function chainEvidence() {
+  return null;
+}
+
 const requiredEnv = [];
 
 // No settings to validate; kept so both chain implementations share the same interface.
@@ -60,4 +65,4 @@ function checkConfig() {}
 
 async function close() {}
 
-module.exports = { mode: "mock", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close };
+module.exports = { mode: "mock", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, chainEvidence, close };

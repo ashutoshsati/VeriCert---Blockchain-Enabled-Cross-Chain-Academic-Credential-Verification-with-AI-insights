@@ -40,3 +40,8 @@ test("each chain reports its own mode name", () => {
   assert.strictEqual(require("../chain/mock").mode, "mock");
   assert.strictEqual(require("../chain/ccip").mode, "ccip");
 });
+
+test("both chains provide chainEvidence, and the mock has none", async () => {
+  assert.strictEqual(typeof require("../chain/ccip").chainEvidence, "function");
+  assert.strictEqual(await require("../chain/mock").chainEvidence("0x" + "a".repeat(64)), null);
+});

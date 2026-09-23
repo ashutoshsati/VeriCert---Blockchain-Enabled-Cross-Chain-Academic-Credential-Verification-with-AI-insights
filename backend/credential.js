@@ -47,10 +47,9 @@ function parseCredential(body) {
   return credential;
 }
 
-// Hashes a parsed credential. Text is lowercased and courses are sorted so the
-// same degree always produces the same hash regardless of formatting.
-function hashCredential(credential) {
-  const canonical = JSON.stringify({
+// The normalised form that is hashed: text lowercased and courses sorted, so formatting never changes the hash.
+function canonicalCredential(credential) {
+  return {
     studentName: credential.studentName.toLowerCase(),
     studentId: credential.studentId.toLowerCase(),
     degree: credential.degree.toLowerCase(),
@@ -58,8 +57,13 @@ function hashCredential(credential) {
     year: credential.year,
     courses: credential.courses.map((c) => c.toLowerCase()).sort(compareStrings),
     issuer: credential.issuer.toLowerCase(),
-  });
-  return "0x" + crypto.createHash("sha256").update(canonical).digest("hex");
+  };
+}
+
+// Hashes a parsed credential. Text is lowercased and courses are sorted so the
+// same degree always produces the same hash regardless of formatting.
+function hashCredential(credential) {
+  return "0x" + crypto.createHash("sha256").update(JSON.stringify(canonicalCredential(credential))).digest("hex");
 }
 
 function normalizeHash(value) {
@@ -70,4 +74,4 @@ function normalizeHash(value) {
   return hash;
 }
 
-module.exports = { ValidationError, parseCredential, hashCredential, normalizeHash };
+module.exports = { ValidationError, parseCredential, canonicalCredential, hashCredential, normalizeHash };

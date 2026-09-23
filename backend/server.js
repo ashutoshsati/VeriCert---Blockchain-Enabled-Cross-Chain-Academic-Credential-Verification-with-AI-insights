@@ -5,16 +5,12 @@ const crypto = require("crypto");
 const { connectDB, Credential, ProvenanceEvent } = require("./db");
 const chain = require("./chain");
 const { ValidationError, parseCredential, hashCredential, normalizeHash } = require("./credential");
+const { logEvent, checkCredential } = require("./verification");
+const { parseExplainRequest, runExplain } = require("./ai");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-async function logEvent(credentialHash, eventType, chainName, txHash, ccipMessageId, details) {
-  await ProvenanceEvent.create({
-    credentialHash, eventType, chain: chainName, txHash, ccipMessageId, details,
-  });
-}
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest();
@@ -74,8 +70,7 @@ app.post("/issue", requireApiKey, async (req, res) => {
 });
 
 async function sendVerification(res, credentialHash) {
-  const onChain = await chain.verifyOnChain(credentialHash);
-  const metadata = await Credential.findOne({ credentialHash });
+  const { onChain, verification, metadata } = await checkCredential(credentialHash);
 
   if (!onChain.found && metadata?.status === "relaying") {
     const relayed = await ProvenanceEvent.findOne({ credentialHash, eventType: "relayed" }).sort({ timestamp: -1 });
@@ -87,20 +82,9 @@ async function sendVerification(res, credentialHash) {
     });
   }
 
-  let verification = onChain;
-  if (metadata?.status === "revoked" && !onChain.revoked) {
-    // The revocation has been sent but has not reached Fuji yet: never report the credential as valid.
-    verification = onChain.found
-      ? { ...onChain, isValid: false, revocationPending: true }
-      : { found: false, isValid: false, revoked: false, revocationPending: true };
-  } else if (!onChain.found) {
+  // A revocation still in transit is reported (as invalid) even though Fuji has no record yet.
+  if (!onChain.found && metadata?.status !== "revoked") {
     return res.status(404).json({ error: "Credential not found on chain", credentialHash });
-  }
-
-  if (onChain.found && metadata?.status === "relaying") {
-    metadata.status = "active";
-    await metadata.save();
-    await logEvent(credentialHash, "delivered", "avalanche-fuji", null, null, "Received on Avalanche Fuji");
   }
 
   await logEvent(credentialHash, "verified", "avalanche-fuji", null, null, "Verification requested");
@@ -121,6 +105,15 @@ app.get("/verify/:hash", async (req, res) => {
 app.post("/verify", async (req, res) => {
   try {
     await sendVerification(res, hashCredential(parseCredential(req.body)));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// The verdict and code checks for a credential, plus an AI explanation when "ai" is true. Public like /verify.
+app.post("/explain", async (req, res) => {
+  try {
+    res.json(await runExplain(parseExplainRequest(req.body), { ip: req.ip }));
   } catch (err) {
     sendError(res, err);
   }

@@ -19,7 +19,8 @@
     "dotenv": "^17.4.2",
     "ethers": "6.17.0",
     "express": "^5.2.1",
-    "mongoose": "^7.8.12"
+    "mongoose": "^7.8.12",
+    "openai": "^7.23.0"
   },
   "devDependencies": {
     "mongodb-memory-server": "^11.2.0"

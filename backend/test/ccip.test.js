@@ -236,6 +236,40 @@ describe("CHAIN_MODE=ccip end to end", { skip }, () => {
     assert.deepStrictEqual(evidence.fujiEvents.map((e) => e.event), ["CredentialReceived", "CredentialRevoked"]);
   });
 
+  it("explains with on-chain checks in ccip mode", async () => {
+    const issued = await call("POST", "/issue", { body: credential("EXPL1"), ...ADMIN });
+    const hash = issued.body.credentialHash;
+    const byId = (body) => Object.fromEntries(body.checks.map((c) => [c.id, c]));
+
+    let result = await call("POST", "/explain", { body: { hash, ai: false } });
+    assert.strictEqual(result.status, 200, JSON.stringify(result.body));
+    assert.strictEqual(result.body.verdict, "valid");
+    for (const id of ["chains-agree", "ccip-message-match", "issuer-approved", "db-matches-chain"]) {
+      assert.strictEqual(byId(result.body)[id].status, "passed", `${id}: ${byId(result.body)[id].detail}`);
+    }
+    assert.deepStrictEqual(result.body.evidence, { backendEvents: 3, fujiEvents: 1, chainSource: "fuji" });
+
+    assert.strictEqual((await call("POST", `/revoke/${hash}`, ADMIN)).status, 200);
+    result = await call("POST", "/explain", { body: { hash, ai: false } });
+    assert.strictEqual(result.body.verdict, "revoked");
+    assert.strictEqual(byId(result.body)["ccip-message-match"].status, "passed");
+    assert.strictEqual(result.body.evidence.fujiEvents, 2);
+  });
+
+  it("flags an issuer wallet that is no longer approved", async () => {
+    const issued = await call("POST", "/issue", { body: credential("EXPL2"), ...ADMIN });
+    await (await veriCert.removeIssuer(owner.address)).wait();
+    try {
+      const result = await call("POST", "/explain", { body: { hash: issued.body.credentialHash, ai: false } });
+      const check = result.body.checks.find((c) => c.id === "issuer-approved");
+      assert.strictEqual(check.status, "failed");
+      assert.strictEqual(check.severity, "warning");
+      assert.strictEqual(result.body.verdict, "valid");
+    } finally {
+      await (await veriCert.addIssuer(owner.address)).wait();
+    }
+  });
+
   it("recovers an issue that reached Amoy but whose response was lost", async () => {
     const hash = ethers.id("lost-response");
     const tx = await veriCert.issue(hash);

@@ -6,6 +6,7 @@ const { connectDB, Credential, ProvenanceEvent } = require("./db");
 const chain = require("./chain");
 const { ValidationError, parseCredential, hashCredential, normalizeHash } = require("./credential");
 const { logEvent, checkCredential } = require("./verification");
+const { parseExplainRequest, runExplain } = require("./ai");
 
 const app = express();
 app.use(cors());
@@ -104,6 +105,15 @@ app.get("/verify/:hash", async (req, res) => {
 app.post("/verify", async (req, res) => {
   try {
     await sendVerification(res, hashCredential(parseCredential(req.body)));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// The verdict and code checks for a credential, plus an AI explanation when "ai" is true. Public like /verify.
+app.post("/explain", async (req, res) => {
+  try {
+    res.json(await runExplain(parseExplainRequest(req.body), { ip: req.ip }));
   } catch (err) {
     sendError(res, err);
   }

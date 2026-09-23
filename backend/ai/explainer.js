@@ -1,6 +1,7 @@
 // Cache and spending limits around the OpenAI call.
 const crypto = require("crypto");
 const openai = require("./openai");
+const { SYSTEM_INSTRUCTIONS } = require("./prompt");
 const { Explanation } = require("../db");
 
 const PER_IP_PER_MINUTE = 10;
@@ -29,7 +30,11 @@ async function explainWithLimits(aiInput, { credentialHash, ip, now = Date.now()
   if (!openai.isConfigured()) return { explanationUnavailable: "not_configured" };
 
   const model = openai.modelName();
-  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ model, aiInput })).digest("hex");
+  // The instructions are part of the key, so rewording them never serves an explanation written under the old wording.
+  const fingerprint = crypto
+    .createHash("sha256")
+    .update(JSON.stringify({ model, instructions: SYSTEM_INSTRUCTIONS, aiInput }))
+    .digest("hex");
   const saved = await Explanation.findOne({ fingerprint });
   if (saved) {
     return { explanation: saved.explanation, model: saved.model, generatedAt: saved.createdAt.toISOString(), cached: true };

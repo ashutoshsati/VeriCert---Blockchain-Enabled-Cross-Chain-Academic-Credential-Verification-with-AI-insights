@@ -4,7 +4,8 @@ const { SYSTEM_INSTRUCTIONS, EXPLANATION_SCHEMA } = require("./prompt");
 
 const DEFAULT_MODEL = "gpt-6-luna";
 const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_OUTPUT_TOKENS = 600;
+// Room for the model's own reasoning tokens as well as the answer: 600 cut off about half of the altered-file explanations.
+const MAX_OUTPUT_TOKENS = 2_000;
 const MAX_OBSERVATIONS = 5;
 
 let client;
@@ -39,9 +40,16 @@ async function generateExplanation(aiInput) {
       { timeout: REQUEST_TIMEOUT_MS, maxRetries: 1 }
     );
     const refused = response.output?.some((item) => item.content?.some((part) => part.type === "refusal"));
-    if (response.status !== "completed" || refused) return { unavailable: "failed" };
+    if (response.status !== "completed" || refused) {
+      const reason = refused ? "refused" : `${response.status} (${response.incomplete_details?.reason ?? "no reason given"})`;
+      console.error(`OpenAI response unusable: ${reason}`);
+      return { unavailable: "failed" };
+    }
     const explanation = JSON.parse(response.output_text);
-    if (!isExplanation(explanation)) return { unavailable: "failed" };
+    if (!isExplanation(explanation)) {
+      console.error("OpenAI response unusable: not in the expected format");
+      return { unavailable: "failed" };
+    }
     return { explanation: { ...explanation, observations: explanation.observations.slice(0, MAX_OBSERVATIONS) } };
   } catch (err) {
     // Only the kind of failure is logged: never the prompt or the reply, which contain credential details.

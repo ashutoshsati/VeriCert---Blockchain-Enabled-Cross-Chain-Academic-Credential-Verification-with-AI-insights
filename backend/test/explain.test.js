@@ -170,7 +170,7 @@ test("ai: true returns an explanation from a strict, unstored OpenAI request", a
   const { params, options } = calls[0];
   assert.strictEqual(params.model, "gpt-6-luna");
   assert.strictEqual(params.store, false);
-  assert.strictEqual(params.max_output_tokens, 600);
+  assert.strictEqual(params.max_output_tokens, 2_000);
   assert.strictEqual(params.text.format.type, "json_schema");
   assert.strictEqual(params.text.format.strict, true);
   assert.match(params.input, /^<verification_data>\n[\s\S]*\n<\/verification_data>$/);

@@ -2,6 +2,8 @@
 const { ValidationError, parseCredential, hashCredential, normalizeHash } = require("../credential");
 const { gatherEvidence } = require("./evidence");
 const { evaluate } = require("./checks");
+const { buildAiInput } = require("./prompt");
+const { explainWithLimits } = require("./explainer");
 
 const CREDENTIAL_KEYS = ["studentName", "studentId", "degree", "major", "year", "courses", "issuer"];
 
@@ -36,10 +38,10 @@ function summariseEvidence(evidence) {
   };
 }
 
-async function runExplain(request, { now = Date.now() } = {}) {
+async function runExplain(request, { ip, now = Date.now() } = {}) {
   const evidence = await gatherEvidence(request);
   const result = evaluate(evidence, now);
-  return {
+  const body = {
     credentialHash: request.presentedHash,
     ...result,
     explanation: null,
@@ -49,6 +51,9 @@ async function runExplain(request, { now = Date.now() } = {}) {
     generatedAt: null,
     cached: false,
   };
+  if (!request.ai) return body;
+  const ai = await explainWithLimits(buildAiInput(evidence, result), { credentialHash: request.presentedHash, ip, now });
+  return { ...body, ...ai };
 }
 
 module.exports = { parseExplainRequest, runExplain };

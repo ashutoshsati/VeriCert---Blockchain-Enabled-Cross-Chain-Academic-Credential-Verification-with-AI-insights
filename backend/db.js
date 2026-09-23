@@ -25,12 +25,22 @@ const provenanceEventSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
 });
 
+// Saved AI explanations, keyed by a fingerprint of everything the AI was shown.
+const explanationSchema = new mongoose.Schema({
+  fingerprint: { type: String, required: true, unique: true },
+  credentialHash: { type: String, index: true },
+  explanation: { type: mongoose.Schema.Types.Mixed, required: true },
+  model: String,
+  createdAt: { type: Date, default: Date.now, index: true },
+});
+
 const Credential = mongoose.model("Credential", credentialSchema);
 const ProvenanceEvent = mongoose.model("ProvenanceEvent", provenanceEventSchema);
+const Explanation = mongoose.model("Explanation", explanationSchema);
 
 async function connectDB(uri) {
   await mongoose.connect(uri);
   console.log("Connected to MongoDB");
 }
 
-module.exports = { connectDB, Credential, ProvenanceEvent };
+module.exports = { connectDB, Credential, ProvenanceEvent, Explanation };

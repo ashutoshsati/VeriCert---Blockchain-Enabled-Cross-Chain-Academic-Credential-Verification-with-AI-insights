@@ -28,3 +28,4 @@ frontend/.streamlit/secrets.toml
 
 # Local MongoDB data from npm run local
 backend/local-data/
+/README.md

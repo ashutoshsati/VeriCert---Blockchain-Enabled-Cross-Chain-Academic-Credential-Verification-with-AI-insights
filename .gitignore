@@ -25,3 +25,6 @@ contracts/flat/
 # Frontend
 __pycache__/
 frontend/.streamlit/secrets.toml
+
+# Local MongoDB data from npm run local
+backend/local-data/

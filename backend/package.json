@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "local": "node scripts/local.js",
     "dev": "node --watch server.js",
     "test": "node --test --test-timeout=120000",
     "smoke:ccip": "node scripts/smoke-ccip.js",

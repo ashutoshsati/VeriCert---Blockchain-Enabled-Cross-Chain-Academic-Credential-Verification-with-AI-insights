@@ -21,3 +21,7 @@ contracts/cache/
 contracts/typechain-types/
 contracts/coverage/
 contracts/flat/
+
+# Frontend
+__pycache__/
+frontend/.streamlit/secrets.toml

@@ -1,0 +1,10 @@
+# Dark "Obsidian Trust" palette from DESIGN.md.
+[theme]
+base = "dark"
+primaryColor = "#10b981"
+backgroundColor = "#121214"
+secondaryBackgroundColor = "#18181b"
+textColor = "#f4f4f5"
+
+[browser]
+gatherUsageStats = false

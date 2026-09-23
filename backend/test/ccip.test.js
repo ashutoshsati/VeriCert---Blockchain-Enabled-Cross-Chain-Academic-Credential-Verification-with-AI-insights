@@ -216,6 +216,26 @@ describe("CHAIN_MODE=ccip end to end", { skip }, () => {
     assert.strictEqual(reverified.body.verification.revocationPending, undefined);
   });
 
+  it("collects Amoy and Fuji evidence for issued and revoked credentials", async () => {
+    const issued = await call("POST", "/issue", { body: credential("EVID1"), ...ADMIN });
+    assert.strictEqual(issued.status, 200, JSON.stringify(issued.body));
+    const hash = issued.body.credentialHash;
+    const onChain = await chain.verifyOnChain(hash);
+
+    let evidence = await chain.chainEvidence(hash, { issuer: onChain.issuer, receivedAt: onChain.receivedAt });
+    assert.deepStrictEqual(evidence.amoy, { exists: true, issuer: owner.address, issuedAt: onChain.issuedAt, revoked: false });
+    assert.strictEqual(evidence.issuerApproved, true);
+    assert.deepStrictEqual(evidence.fujiEvents.map((e) => [e.event, e.messageId]), [["CredentialReceived", issued.body.ccipMessageId]]);
+
+    const revokedAt = Date.now();
+    assert.strictEqual((await call("POST", `/revoke/${hash}`, ADMIN)).status, 200);
+    evidence = await chain.chainEvidence(hash, {
+      issuer: onChain.issuer, receivedAt: onChain.receivedAt, revoked: true, revokedAfter: revokedAt,
+    });
+    assert.strictEqual(evidence.amoy.revoked, true);
+    assert.deepStrictEqual(evidence.fujiEvents.map((e) => e.event), ["CredentialReceived", "CredentialRevoked"]);
+  });
+
   it("recovers an issue that reached Amoy but whose response was lost", async () => {
     const hash = ethers.id("lost-response");
     const tx = await veriCert.issue(hash);

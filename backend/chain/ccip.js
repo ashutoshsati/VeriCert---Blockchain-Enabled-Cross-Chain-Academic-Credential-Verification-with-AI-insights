@@ -6,6 +6,9 @@ const ACTION_REVOKE = 2;
 const FEE_BUFFER_PERCENT = 110n; // the contract refunds anything above the actual fee
 const LOG_SEARCH_WINDOW = 2_000; // blocks per eth_getLogs call (public RPCs cap the range)
 const LOG_SEARCH_MAX_BLOCKS = 50_000; // about a day on Amoy
+const RECEIVED_EVENT_WINDOW = 20; // blocks after the first one stamped receivedAt (several Fuji blocks can share a second)
+const REVOKE_SEARCH_BLOCKS = 4_000; // about two hours of Fuji blocks after the revoke was recorded
+const REVOKE_SEARCH_MARGIN_MS = 10 * 60 * 1000; // start a little before the backend's own revoke timestamp
 // issue/revoke cost well under 500k gas in practice. Used only as a last-resort gasLimit when
 // estimateGas itself cannot be computed (observed on a local Hardhat node for revoke(), even though
 // the call actually succeeds cheaply) and the failure carries no revert data to explain instead.
@@ -19,6 +22,7 @@ const VERICERT_ABI = [
   "function revoke(bytes32 hash) payable returns (bytes32 messageId)",
   "function quoteFee(uint8 action, bytes32 hash) view returns (uint256)",
   "function getCredential(bytes32 hash) view returns (bool exists, address issuer, uint64 issuedAt, bool revoked)",
+  "function isIssuer(address) view returns (bool)",
   "event CredentialIssued(bytes32 indexed hash, address indexed issuer, bytes32 messageId)",
   "event CredentialRevoked(bytes32 indexed hash, address indexed revokedBy, bytes32 messageId)",
   "error NotIssuer(address account)",
@@ -32,6 +36,8 @@ const VERICERT_ABI = [
 
 const RECEIVER_ABI = [
   "function getCredential(bytes32 hash) view returns (bool exists, address issuer, uint64 issuedAt, uint64 receivedAt, bool revoked)",
+  "event CredentialReceived(bytes32 indexed hash, address indexed issuer, uint64 issuedAt, bytes32 messageId)",
+  "event CredentialRevoked(bytes32 indexed hash, bytes32 messageId)",
 ];
 
 const FRIENDLY_ERRORS = {
@@ -116,6 +122,29 @@ async function findLatestEvent(contract, filter) {
   return null;
 }
 
+// First block whose timestamp (seconds) is at or after `timestamp`, by binary search: about 25 getBlock calls on Fuji.
+async function firstBlockAtOrAfter(provider, timestamp) {
+  let low = 0;
+  let high = await provider.getBlockNumber();
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((await provider.getBlock(mid)).timestamp < timestamp) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+// Oldest matching event from block `from` onwards, searched forwards in windows for up to `maxBlocks` blocks.
+async function findFirstEventFrom(contract, filter, from, maxBlocks) {
+  const latest = await contract.runner.provider.getBlockNumber();
+  const ceiling = Math.min(latest, from + maxBlocks);
+  for (let start = from; start <= ceiling; start += LOG_SEARCH_WINDOW) {
+    const events = await contract.queryFilter(filter, start, Math.min(ceiling, start + LOG_SEARCH_WINDOW - 1));
+    if (events.length) return events[0];
+  }
+  return null;
+}
+
 // The transaction already succeeded earlier (e.g. the response was lost), so return its details instead of resending.
 async function recover(veriCert, filter) {
   const event = await findLatestEvent(veriCert, filter);
@@ -192,10 +221,55 @@ async function verifyOnChain(credentialHash) {
   };
 }
 
+// On-chain evidence for /explain: the Amoy source record, whether its issuer is still approved, and this
+// credential's Fuji events. receivedAt/revokedAfter (ms) let the search jump straight to the right blocks.
+async function chainEvidence(credentialHash, { issuer, receivedAt, revoked, revokedAfter } = {}) {
+  const { veriCert, receiver } = getClients();
+  const fuji = receiver.runner.provider;
+  const amoy = await veriCert.getCredential(credentialHash);
+  const issuerApproved = issuer ? await veriCert.isIssuer(issuer) : null;
+  const fujiEvents = [];
+
+  if (receivedAt) {
+    const start = await firstBlockAtOrAfter(fuji, Math.floor(receivedAt / 1000));
+    const end = Math.min(await fuji.getBlockNumber(), start + RECEIVED_EVENT_WINDOW);
+    const [event] = await receiver.queryFilter(receiver.filters.CredentialReceived(credentialHash), start, end);
+    if (event) {
+      fujiEvents.push({
+        event: "CredentialReceived",
+        blockNumber: event.blockNumber,
+        transactionHash: event.transactionHash,
+        messageId: event.args.messageId,
+        issuer: event.args.issuer,
+        issuedAt: Number(event.args.issuedAt) * 1000,
+      });
+    }
+  }
+
+  if (revoked) {
+    const filter = receiver.filters.CredentialRevoked(credentialHash);
+    let event = null;
+    if (revokedAfter) {
+      const from = await firstBlockAtOrAfter(fuji, Math.floor((revokedAfter - REVOKE_SEARCH_MARGIN_MS) / 1000));
+      event = await findFirstEventFrom(receiver, filter, from, REVOKE_SEARCH_BLOCKS);
+    }
+    event ??= await findLatestEvent(receiver, filter);
+    if (event) {
+      fujiEvents.push({ event: "CredentialRevoked", blockNumber: event.blockNumber, transactionHash: event.transactionHash, messageId: event.args.messageId });
+    }
+  }
+
+  return {
+    amoy: { exists: amoy.exists, issuer: amoy.issuer, issuedAt: Number(amoy.issuedAt) * 1000, revoked: amoy.revoked },
+    issuerApproved,
+    fujiEvents,
+  };
+}
+
 async function close() {
   if (!clients) return;
   for (const provider of clients.providers) provider.destroy();
   clients = undefined;
 }
 
-module.exports = { mode: "ccip", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close, VERICERT_ABI, RECEIVER_ABI };
+module.exports = { mode: "ccip", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, chainEvidence, close, VERICERT_ABI, RECEIVER_ABI };

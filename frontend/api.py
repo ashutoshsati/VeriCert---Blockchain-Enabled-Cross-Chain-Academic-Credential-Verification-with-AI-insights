@@ -12,6 +12,8 @@ import requests
 # Issuing and revoking wait for the Polygon Amoy transaction to confirm (up to 3 minutes in ccip mode).
 CHAIN_WRITE_TIMEOUT = 240
 READ_TIMEOUT = 30
+# /explain with ai=True waits for OpenAI (30 s timeout plus one retry on the backend).
+AI_TIMEOUT = 60
 
 # Backend validation messages name the JSON fields; show the labels people see on the forms instead.
 FIELD_LABELS = {
@@ -83,6 +85,10 @@ class VeriCertApi:
 
     def verify_hash(self, credential_hash: str) -> ApiResult:
         return self._request("GET", f"/verify/{credential_hash.strip()}")
+
+    def explain(self, payload: dict, ai: bool) -> ApiResult:
+        timeout = AI_TIMEOUT if ai else READ_TIMEOUT
+        return self._request("POST", "/explain", json={**payload, "ai": ai}, timeout=timeout)
 
     def credentials(self, limit: int = 200) -> ApiResult:
         return self._request("GET", "/credentials", admin=True, params={"limit": limit})

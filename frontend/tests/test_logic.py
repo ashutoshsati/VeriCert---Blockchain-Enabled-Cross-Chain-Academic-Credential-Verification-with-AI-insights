@@ -6,7 +6,7 @@ import requests
 
 from api import ApiResult, VeriCertApi
 from credential_file import build_file, parse_courses, read_file
-from verdict import ERROR, INVALID_INPUT, NOT_FOUND, RELAYING, REVOKED, VALID, interpret
+from verdict import ERROR, INVALID_INPUT, NOT_FOUND, RELAYING, REVOKED, TAMPERED, VALID, from_explain, interpret, unavailable_message
 
 CREDENTIAL = {
     "studentName": "Jane Doe",
@@ -61,6 +61,19 @@ class ApiClientTest(unittest.TestCase):
         self.assertEqual(result.error, "Student name is required; Year must be a whole number; Courses must be a list")
         self.assertEqual(ApiResult(409, {"error": "This credential already exists"}).error, "This credential already exists")
 
+    def test_explain_sends_the_ai_flag(self):
+        session = mock.Mock()
+        session.request.return_value = fake_response(200, {"verdict": "valid"})
+        api = VeriCertApi("http://api", session=session)
+        api.explain({"hash": "0xabc"}, ai=True)
+        method, url = session.request.call_args.args
+        self.assertEqual((method, url), ("POST", "http://api/explain"))
+        self.assertEqual(session.request.call_args.kwargs["json"], {"hash": "0xabc", "ai": True})
+        self.assertEqual(session.request.call_args.kwargs["timeout"], 60)
+        api.explain({"hash": "0xabc"}, ai=False)
+        self.assertEqual(session.request.call_args.kwargs["json"]["ai"], False)
+        self.assertEqual(session.request.call_args.kwargs["timeout"], 30)
+
     def test_events_filter_by_hash(self):
         session = mock.Mock()
         session.request.return_value = fake_response(200, {"events": []})
@@ -99,19 +112,41 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(interpret(ApiResult(None, connection_error="down")).kind, ERROR)
 
 
+class ExplainVerdictTest(unittest.TestCase):
+    def test_each_verdict(self):
+        self.assertEqual(from_explain({"verdict": "valid"}).kind, VALID)
+        self.assertEqual(from_explain({"verdict": "revoked"}).kind, REVOKED)
+        self.assertEqual(from_explain({"verdict": "relaying"}).kind, RELAYING)
+        self.assertEqual(from_explain({"verdict": "not_found"}).kind, NOT_FOUND)
+        tampered = from_explain({"verdict": "tampered"})
+        self.assertEqual(tampered.kind, TAMPERED)
+        self.assertEqual(tampered.title, "Altered document")
+        self.assertEqual(from_explain({"verdict": "surprise"}).kind, ERROR)
+
+    def test_unavailable_messages(self):
+        self.assertIn("isn't set up", unavailable_message("not_configured"))
+        self.assertIn("Too many", unavailable_message("rate_limited"))
+        self.assertIn("daily limit", unavailable_message("daily_limit"))
+        self.assertEqual(unavailable_message("failed"), unavailable_message("something new"))
+
+
 class CredentialFileTest(unittest.TestCase):
     def test_round_trip(self):
-        data = build_file(CREDENTIAL, "0x" + "a" * 64)
-        self.assertEqual(json.loads(data)["credentialHash"], "0x" + "a" * 64)
-        self.assertEqual(read_file(data), CREDENTIAL)
+        data = build_file(CREDENTIAL, "0x" + "A" * 64)
+        self.assertEqual(json.loads(data)["credentialHash"], "0x" + "A" * 64)
+        self.assertEqual(read_file(data), (CREDENTIAL, "0x" + "a" * 64))
 
     def test_accepts_bare_details_and_ignores_extra_fields(self):
         data = json.dumps({**CREDENTIAL, "status": "active"}).encode()
-        self.assertEqual(read_file(data), CREDENTIAL)
+        self.assertEqual(read_file(data), (CREDENTIAL, None))
 
     def test_courses_are_optional(self):
         details = {k: v for k, v in CREDENTIAL.items() if k != "courses"}
-        self.assertEqual(read_file(json.dumps(details).encode()), details)
+        self.assertEqual(read_file(json.dumps(details).encode()), (details, None))
+
+    def test_malformed_claimed_hash_is_ignored(self):
+        data = json.dumps({"format": "vericert-credential", "credential": CREDENTIAL, "credentialHash": "0x123"}).encode()
+        self.assertEqual(read_file(data), (CREDENTIAL, None))
 
     def test_rejects_bad_files(self):
         for data, reason in [

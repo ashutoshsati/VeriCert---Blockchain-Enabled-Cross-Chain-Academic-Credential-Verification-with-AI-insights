@@ -37,7 +37,7 @@ def _verify_file(api):
     st.caption("The details inside the file are re-hashed and compared on chain, so an edited file will not match.")
     if st.button("Verify file", type="primary", disabled=uploaded is None):
         try:
-            credential = read_file(uploaded.getvalue())
+            credential, _ = read_file(uploaded.getvalue())
         except ValueError as err:
             st.session_state.pop("verify_result", None)
             st.error(str(err))

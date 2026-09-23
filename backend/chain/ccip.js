@@ -198,4 +198,4 @@ async function close() {
   clients = undefined;
 }
 
-module.exports = { requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close, VERICERT_ABI, RECEIVER_ABI };
+module.exports = { mode: "ccip", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close, VERICERT_ABI, RECEIVER_ABI };

@@ -238,3 +238,44 @@ test("a pending credential cannot be revoked", async () => {
   const revoked = await call("POST", `/revoke/${hash}`, ADMIN);
   assert.strictEqual(revoked.status, 409);
 });
+
+test("health reports which chain the server is using", async () => {
+  const health = await call("GET", "/health");
+  assert.strictEqual(health.status, 200);
+  assert.deepStrictEqual(health.body, { status: "ok", chainMode: "mock" });
+});
+
+test("listing credentials and events requires a valid API key", async () => {
+  assert.strictEqual((await call("GET", "/credentials")).status, 401);
+  assert.strictEqual((await call("GET", "/events", { apiKey: "wrong" })).status, 401);
+});
+
+test("credentials and events are listed newest first", async () => {
+  const first = await call("POST", "/issue", { body: credential("LIST1"), ...ADMIN });
+  const second = await call("POST", "/issue", { body: credential("LIST2"), ...ADMIN });
+  await call("POST", `/revoke/${first.body.credentialHash}`, ADMIN);
+
+  const listed = await call("GET", "/credentials?limit=2", ADMIN);
+  assert.strictEqual(listed.status, 200);
+  assert.deepStrictEqual(
+    listed.body.credentials.map((c) => [c.studentId, c.status]),
+    [["LIST2", "relaying"], ["LIST1", "revoked"]]
+  );
+
+  const events = await call("GET", "/events?limit=1", ADMIN);
+  assert.strictEqual(events.status, 200);
+  assert.strictEqual(events.body.events.length, 1);
+  assert.strictEqual(events.body.events[0].eventType, "revoked");
+  assert.strictEqual(events.body.events[0].credentialHash, first.body.credentialHash);
+
+  const filtered = await call("GET", `/events?hash=${second.body.credentialHash.toUpperCase().replace("0X", "0x")}`, ADMIN);
+  assert.deepStrictEqual(filtered.body.events.map((e) => e.eventType), ["relayed", "issued"]);
+});
+
+test("list limits must be whole numbers from 1 to 200", async () => {
+  for (const limit of ["0", "201", "abc", "1.5"]) {
+    assert.strictEqual((await call("GET", `/credentials?limit=${limit}`, ADMIN)).status, 400, limit);
+    assert.strictEqual((await call("GET", `/events?limit=${limit}`, ADMIN)).status, 400, limit);
+  }
+  assert.strictEqual((await call("GET", "/events?hash=nope", ADMIN)).status, 400);
+});

@@ -148,6 +148,41 @@ app.post("/revoke/:hash", requireApiKey, async (req, res) => {
   }
 });
 
+// Lets the frontend show which chain it is talking to; mock-mode transaction hashes are not real.
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", chainMode: chain.mode });
+});
+
+function parseLimit(value) {
+  if (value === undefined) return 50;
+  const limit = /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!(limit >= 1 && limit <= 200)) throw new ValidationError("limit must be a whole number from 1 to 200");
+  return limit;
+}
+
+// Admin dashboard: the most recently issued credentials with their current status.
+app.get("/credentials", requireApiKey, async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit);
+    const credentials = await Credential.find().sort({ createdAt: -1, _id: -1 }).limit(limit);
+    res.json({ credentials });
+  } catch (err) {
+    sendAdminError(res, err);
+  }
+});
+
+// Admin activity log: provenance events newest first, optionally for a single credential.
+app.get("/events", requireApiKey, async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit);
+    const filter = req.query.hash === undefined ? {} : { credentialHash: normalizeHash(req.query.hash) };
+    const events = await ProvenanceEvent.find(filter).sort({ timestamp: -1, _id: -1 }).limit(limit);
+    res.json({ events });
+  } catch (err) {
+    sendAdminError(res, err);
+  }
+});
+
 // Malformed JSON bodies and other errors thrown by middleware.
 app.use((err, req, res, next) => {
   const status = err.status || 500;

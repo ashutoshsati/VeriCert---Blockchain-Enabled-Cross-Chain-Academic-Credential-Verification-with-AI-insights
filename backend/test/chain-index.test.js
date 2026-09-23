@@ -35,3 +35,8 @@ test("CHAIN_MODE=ccip selects the CCIP chain and lists its settings", () => {
   assert.strictEqual(ccip, require("../chain/ccip"));
   assert.deepStrictEqual(ccip.requiredEnv, ["AMOY_RPC_URL", "FUJI_RPC_URL", "ISSUER_PRIVATE_KEY", "VERICERT_ADDRESS", "RECEIVER_ADDRESS"]);
 });
+
+test("each chain reports its own mode name", () => {
+  assert.strictEqual(require("../chain/mock").mode, "mock");
+  assert.strictEqual(require("../chain/ccip").mode, "ccip");
+});

@@ -60,4 +60,4 @@ function checkConfig() {}
 
 async function close() {}
 
-module.exports = { requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close };
+module.exports = { mode: "mock", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close };

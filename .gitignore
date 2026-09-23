@@ -14,4 +14,18 @@ Thumbs.db
 # Local-only project notes
 CLAUDE.md
 docs/
+
+# Hardhat build output
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/coverage/
+contracts/flat/
+
+# Frontend
+__pycache__/
+frontend/.streamlit/secrets.toml
+
+# Local MongoDB data from npm run local
+backend/local-data/
 /README.md

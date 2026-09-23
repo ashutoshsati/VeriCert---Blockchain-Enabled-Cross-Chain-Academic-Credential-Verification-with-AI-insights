@@ -31,10 +31,20 @@ function requireApiKey(req, res, next) {
   next();
 }
 
-function sendError(res, err) {
+// Public routes must not echo raw error messages for unexpected 500s (a malformed ISSUER_PRIVATE_KEY,
+// for example, would otherwise reach anonymous /verify callers via ethers' own error text). The
+// API-key-protected admin routes (/issue, /revoke) keep exposing err.message: those errors are
+// meant to explain the failure to whoever holds the admin key (e.g. "not an approved issuer").
+function sendError(res, err, { exposeMessage = false } = {}) {
   if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
   if (err.code === 11000) return res.status(409).json({ error: "This credential already exists" });
-  res.status(500).json({ error: err.message });
+  console.error(err);
+  if (exposeMessage) return res.status(500).json({ error: err.message });
+  res.status(500).json({ error: "Internal server error" });
+}
+
+function sendAdminError(res, err) {
+  sendError(res, err, { exposeMessage: true });
 }
 
 app.post("/issue", requireApiKey, async (req, res) => {
@@ -53,25 +63,50 @@ app.post("/issue", requireApiKey, async (req, res) => {
 
     // A record that is still pending had its earlier relay fail, so this retries it.
     const { txHash, ccipMessageId } = await chain.issueAndRelay(credentialHash, credential.issuer);
-    record.status = "active";
+    record.status = "relaying";
     await record.save();
-    await logEvent(credentialHash, "relayed", "avalanche-fuji", txHash, ccipMessageId, "Relayed via CCIP");
+    await logEvent(credentialHash, "relayed", "polygon-amoy", txHash, ccipMessageId, "Sent to Avalanche Fuji via CCIP");
 
-    res.json({ success: true, credentialHash, txHash, ccipMessageId });
+    res.json({ success: true, credentialHash, status: "relaying", txHash, ccipMessageId });
   } catch (err) {
-    sendError(res, err);
+    sendAdminError(res, err);
   }
 });
 
 async function sendVerification(res, credentialHash) {
   const onChain = await chain.verifyOnChain(credentialHash);
-  if (!onChain.found) return res.status(404).json({ error: "Credential not found on chain", credentialHash });
-
   const metadata = await Credential.findOne({ credentialHash });
-  await logEvent(credentialHash, "verified", "avalanche-fuji", null, null, "Verification requested");
-  const provenance = await ProvenanceEvent.find({ credentialHash }).sort({ timestamp: 1 });
 
-  res.json({ credentialHash, verification: onChain, metadata, provenance });
+  if (!onChain.found && metadata?.status === "relaying") {
+    const relayed = await ProvenanceEvent.findOne({ credentialHash, eventType: "relayed" }).sort({ timestamp: -1 });
+    return res.status(202).json({
+      credentialHash,
+      status: "relaying",
+      ccipMessageId: relayed?.ccipMessageId ?? null,
+      message: "Issued on Polygon Amoy and waiting for CCIP delivery to Avalanche Fuji. Try again in a few minutes.",
+    });
+  }
+
+  let verification = onChain;
+  if (metadata?.status === "revoked" && !onChain.revoked) {
+    // The revocation has been sent but has not reached Fuji yet: never report the credential as valid.
+    verification = onChain.found
+      ? { ...onChain, isValid: false, revocationPending: true }
+      : { found: false, isValid: false, revoked: false, revocationPending: true };
+  } else if (!onChain.found) {
+    return res.status(404).json({ error: "Credential not found on chain", credentialHash });
+  }
+
+  if (onChain.found && metadata?.status === "relaying") {
+    metadata.status = "active";
+    await metadata.save();
+    await logEvent(credentialHash, "delivered", "avalanche-fuji", null, null, "Received on Avalanche Fuji");
+  }
+
+  await logEvent(credentialHash, "verified", "avalanche-fuji", null, null, "Verification requested");
+  const provenance = await ProvenanceEvent.find({ credentialHash }).sort({ timestamp: 1, _id: 1 });
+
+  res.json({ credentialHash, verification, metadata, provenance });
 }
 
 app.get("/verify/:hash", async (req, res) => {
@@ -109,19 +144,66 @@ app.post("/revoke/:hash", requireApiKey, async (req, res) => {
 
     res.json({ success: true, credentialHash });
   } catch (err) {
-    sendError(res, err);
+    sendAdminError(res, err);
+  }
+});
+
+// Lets the frontend show which chain it is talking to; mock-mode transaction hashes are not real.
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", chainMode: chain.mode });
+});
+
+function parseLimit(value) {
+  if (value === undefined) return 50;
+  const limit = /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!(limit >= 1 && limit <= 200)) throw new ValidationError("limit must be a whole number from 1 to 200");
+  return limit;
+}
+
+// Admin dashboard: the most recently issued credentials with their current status.
+app.get("/credentials", requireApiKey, async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit);
+    const credentials = await Credential.find().sort({ createdAt: -1, _id: -1 }).limit(limit);
+    res.json({ credentials });
+  } catch (err) {
+    sendAdminError(res, err);
+  }
+});
+
+// Admin activity log: provenance events newest first, optionally for a single credential.
+app.get("/events", requireApiKey, async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit);
+    const filter = req.query.hash === undefined ? {} : { credentialHash: normalizeHash(req.query.hash) };
+    const events = await ProvenanceEvent.find(filter).sort({ timestamp: -1, _id: -1 }).limit(limit);
+    res.json({ events });
+  } catch (err) {
+    sendAdminError(res, err);
   }
 });
 
 // Malformed JSON bodies and other errors thrown by middleware.
 app.use((err, req, res, next) => {
-  res.status(err.status || 500).json({ error: err.message });
+  const status = err.status || 500;
+  if (status === 500) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+  res.status(status).json({ error: err.message });
 });
 
 if (require.main === module) {
-  const missing = ["MONGODB_URI", "ADMIN_API_KEY"].filter((name) => !process.env[name]);
+  const missing = ["MONGODB_URI", "ADMIN_API_KEY", ...chain.requiredEnv].filter((name) => !process.env[name]);
   if (missing.length) {
     console.error(`Missing required environment variables: ${missing.join(", ")} (see .env.example)`);
+    process.exit(1);
+  }
+
+  try {
+    chain.checkConfig();
+  } catch (err) {
+    console.error(err.message);
     process.exit(1);
   }
 

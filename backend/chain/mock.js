@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 // Mock issuer/verifier chains, saved to a JSON file so records survive a server restart.
-const STATE_FILE = process.env.MOCK_CHAIN_FILE || path.join(__dirname, "mock-chain.json");
+const STATE_FILE = process.env.MOCK_CHAIN_FILE || path.join(__dirname, "..", "mock-chain.json");
 
 function loadState() {
   try {
@@ -53,4 +53,11 @@ async function revokeAndRelay(credentialHash) {
   return { txHash: fakeHash("cc"), ccipMessageId: fakeHash("dd") };
 }
 
-module.exports = { issueAndRelay, verifyOnChain, revokeAndRelay };
+const requiredEnv = [];
+
+// No settings to validate; kept so both chain implementations share the same interface.
+function checkConfig() {}
+
+async function close() {}
+
+module.exports = { mode: "mock", requiredEnv, checkConfig, issueAndRelay, verifyOnChain, revokeAndRelay, close };

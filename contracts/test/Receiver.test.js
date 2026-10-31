@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { ACTION_ISSUE, ACTION_REVOKE, deploySimulator, buildMessage, deliver } = require("./helpers");
-
+//
 describe("Receiver", function () {
   async function deployFixture() {
     const [owner, trustedSender, issuer, outsider] = await ethers.getSigners();

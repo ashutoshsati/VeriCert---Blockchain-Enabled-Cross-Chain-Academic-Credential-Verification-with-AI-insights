@@ -25,7 +25,7 @@ function buildMessage({ messageId = ethers.id("message"), sourceChainSelector, s
   };
 }
 
-// Delivers a hand-built CCIP message to `receiver` through the mock router, as the real router would.
+// Delivers a hand-built CCIP message to `receiver` through the mock router, as the real router would
 // routeMessage does not revert when the receiver reverts, so the outcome is read with staticCall first.
 async function deliver(router, receiver, fields) {
   const message = buildMessage(fields);

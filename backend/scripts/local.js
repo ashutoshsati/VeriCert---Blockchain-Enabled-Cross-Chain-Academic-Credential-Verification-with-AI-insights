@@ -20,7 +20,7 @@ async function main() {
   fs.mkdirSync(DB_PATH, { recursive: true });
   const mongo = await MongoMemoryServer.create({ instance: { dbPath: DB_PATH, port: PORT, storageEngine: "wiredTiger" } });
   // Separate databases per chain mode: records made in one mode would 404 or stay pending in the other.
-  const uri = mongo.getUri("vericert");
+  const uri = mongo.getUri(process.env.CHAIN_MODE === "ccip" ? "vericert-ccip" : "vericert");
   console.log(`Local MongoDB running (data in ${path.relative(process.cwd(), DB_PATH)})`);
 
   // Start the backend server, pointed at that database.

@@ -18,7 +18,7 @@ This puts `VeriCert` on Polygon Amoy and `Receiver` on Avalanche Fuji, connects 
 3. Get test tokens:
    - Amoy POL: https://faucet.polygon.technology
    - Fuji AVAX: https://core.app/tools/testnet-faucet (this faucet may require a mainnet AVAX balance or a coupon code; if it does not work, use https://faucets.chain.link/fuji instead)
-   About 0.5 POL and 0.5 AVAX is plenty.
+   About 5 POL and 0.5 AVAX is enough to deploy and test. Each issue or revoke costs about 1.2 POL in CCIP fees, plus gas.
 
 ## 2. Build the Remix files
 
@@ -69,7 +69,7 @@ In `backend/.env`:
 
 ```env
 CHAIN_MODE=ccip
-AMOY_RPC_URL=https://rpc-amoy.polygon.technology
+AMOY_RPC_URL=https://polygon-amoy-bor-rpc.publicnode.com
 FUJI_RPC_URL=https://api.avax-test.network/ext/bc/C/rpc
 ISSUER_PRIVATE_KEY=<your MetaMask private key>
 VERICERT_ADDRESS=<from step 4>

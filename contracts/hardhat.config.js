@@ -16,7 +16,7 @@ module.exports = {
   // The two test blockchains: Polygon Amoy (where degrees are issued) and Avalanche Fuji (where they are
   // checked). Each has a public web address to connect to, used if we haven't set our own.
   networks: {
-    amoy: { url: process.env.AMOY_RPC_URL || "https://rpc-amoy.polygon.technology", chainId: 80002, accounts },
+    amoy: { url: process.env.AMOY_RPC_URL || "https://polygon-amoy-bor-rpc.publicnode.com", chainId: 80002, accounts },
     fuji: { url: process.env.FUJI_RPC_URL || "https://api.avax-test.network/ext/bc/C/rpc", chainId: 43113, accounts },
   },
 };

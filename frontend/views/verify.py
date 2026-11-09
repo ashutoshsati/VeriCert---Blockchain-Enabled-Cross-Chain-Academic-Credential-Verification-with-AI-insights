@@ -1,3 +1,11 @@
+# IN PLAIN ENGLISH: the "Verify" page, used by employers. No login needed. An employer can check a
+# candidate's degree in three ways: upload the certificate file, type in the details from the
+# certificate, or paste the degree's fingerprint code. The page then shows:
+#   - a clear verdict (genuine, revoked, altered, still on its way, or not found),
+#   - if altered, exactly which details were changed,
+#   - the ten automatic checks VeriCert ran,
+#   - an optional "Explain this result" button for a plain-language AI summary, and
+#   - the degree's details, its blockchain record and its history.
 import pandas as pd
 import streamlit as st
 
@@ -7,6 +15,7 @@ from verdict import RELAYING, VALID, from_explain, interpret, unavailable_messag
 from views.common import show_events
 
 
+# Draws the page: heading, the three ways to check (as tabs), then the result of the last check.
 def render(api, chain_mode):
     theme.page_header(
         "Avalanche Fuji · employer verification",
@@ -28,6 +37,8 @@ def render(api, chain_mode):
         _show_result(api, st.session_state.verify_state, chain_mode)
 
 
+# Runs the check and remembers the result so it stays on screen. The AI summary is not requested yet;
+# it only runs if the employer clicks the button (it costs money, the rest is free).
 def _check(api, payload, verify_call):
     """Runs the verification and the free code checks together; the AI summary waits for the button."""
     with st.spinner("Checking Avalanche Fuji…"):
@@ -37,6 +48,8 @@ def _check(api, payload, verify_call):
     st.session_state.pop("ai_result", None)
 
 
+# OPTION 1: upload the certificate file. The fingerprint written in the file is passed along too, so an
+# edited file can be recognised as "altered" rather than just "not found".
 def _verify_file(api):
     uploaded = st.file_uploader("Credential file from the candidate (.json)", type=["json"])
     st.caption("The details inside the file are re-hashed and compared on chain, so an edited file will not match.")
@@ -51,6 +64,7 @@ def _verify_file(api):
         _check(api, payload, lambda: api.verify_details(credential))
 
 
+# OPTION 2: type in the details exactly as printed on the certificate.
 def _verify_details(api):
     with st.form("verify_details_form"):
         c1, c2 = st.columns(2)
@@ -77,6 +91,7 @@ def _verify_details(api):
         _check(api, credential, lambda: api.verify_details(credential))
 
 
+# OPTION 3: paste the degree's fingerprint code.
 def _verify_hash(api):
     with st.form("verify_hash_form"):
         credential_hash = st.text_input("Credential hash", placeholder="0x followed by 64 hex characters")
@@ -85,12 +100,15 @@ def _verify_hash(api):
         _check(api, {"hash": credential_hash.strip()}, lambda: api.verify_hash(credential_hash))
 
 
+# For an altered certificate: a table of each changed detail, next to the official version.
 def _show_field_changes(changes):
     st.subheader("What was changed")
     rows = [{"Field": c["label"], "In the file": c["presented"], "Official record": c["official"]} for c in changes]
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
+# The "Explain this result" button and, once clicked, the AI's plain-language summary (or the reason
+# it isn't available).
 def _ai_section(api, payload):
     if st.button("Explain this result", type="primary"):
         with st.spinner("Asking OpenAI to explain the result…"):
@@ -106,6 +124,9 @@ def _ai_section(api, payload):
         st.info(unavailable_message(result.body.get("explanationUnavailable")))
 
 
+# Shows the full result, top to bottom: verdict banner, changed details (if altered), the fingerprint
+# that was checked, a tracking link (if still on its way), the automatic checks and AI button, then the
+# degree details, the blockchain record and the history.
 def _show_result(api, state, chain_mode):
     result, explained = state["verify"], state["explain"]
     verdict = from_explain(explained.body) if explained.ok else interpret(result)

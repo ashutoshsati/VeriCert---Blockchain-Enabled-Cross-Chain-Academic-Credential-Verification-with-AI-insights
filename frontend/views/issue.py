@@ -1,3 +1,9 @@
+# IN PLAIN ENGLISH: the "Issue" page, used by university staff (admin key required). Staff can:
+#   - see totals (issued, delivered, in transit, revoked),
+#   - fill in a form to issue a new degree, then download the certificate file for the graduate,
+#   - see a table of every degree issued and its status,
+#   - check whether degrees still "in transit" have arrived, retry any that failed to send, and
+#   - revoke a degree (with a confirmation tick-box, because it can't be undone).
 from datetime import date
 
 import pandas as pd
@@ -7,11 +13,14 @@ import theme
 from credential_file import FIELDS, build_file, parse_courses
 from views.common import admin_error, admin_key_missing
 
+# Show at most 200 recent degrees.
 LIST_LIMIT = 200
 # Checking delivery calls /verify once per credential, so cap it per click.
 DELIVERY_CHECK_LIMIT = 20
 
 
+# Draws the page: heading, admin key check, totals, the issue form beside its result, then the table
+# of degrees and the follow-up actions.
 def render(api, chain_mode, default_issuer=""):
     theme.page_header(
         "Polygon Amoy · university registrar",
@@ -41,6 +50,7 @@ def render(api, chain_mode, default_issuer=""):
     _actions(api, credentials, chain_mode)
 
 
+# The four summary boxes at the top: issued, delivered to Fuji, in transit, and revoked.
 def _show_counts(credentials):
     by_status = {status: 0 for status in theme.STATUS_LABELS}
     for credential in credentials:
@@ -57,6 +67,8 @@ def _show_counts(credentials):
         theme.metric("Revoked", by_status["revoked"], f"{by_status['pending']} not sent" if by_status["pending"] else None)
 
 
+# The form for issuing a new degree. On submit it sends the details to the backend (which records the
+# degree on the blockchain) and remembers the result to show alongside.
 def _issue_form(api, chain_mode, default_issuer):
     st.subheader("Degree details")
     with st.form("issue_form"):
@@ -93,6 +105,8 @@ def _issue_form(api, chain_mode, default_issuer):
         st.rerun()  # refresh the counts and table with the new credential
 
 
+# The outcome of the last issue attempt: success (with the fingerprint, tracking links and a button to
+# download the graduate's certificate file), "already issued", "admin key rejected", or another error.
 def _last_result(chain_mode):
     st.subheader("Result")
     if "last_issue" not in st.session_state:
@@ -131,6 +145,7 @@ def _last_result(chain_mode):
         theme.banner("error", "Not issued", result.error)
 
 
+# A table of every degree issued, with its current status.
 def _credential_table(credentials):
     st.subheader("Issued credentials")
     if not credentials:
@@ -152,6 +167,7 @@ def _credential_table(credentials):
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
+# A one-line description of a degree for drop-down menus: name, student ID, degree and short fingerprint.
 def _label(credential):
     return (
         f"{credential.get('studentName')} · {credential.get('studentId')} · {credential.get('degree')} "
@@ -159,6 +175,10 @@ def _label(credential):
     )
 
 
+# Follow-up actions below the table:
+#   - "Check deliveries": ask Fuji whether degrees still in transit have arrived.
+#   - "Retry sending": resend degrees that were saved but never reached the blockchain.
+#   - "Revoke a credential": cancel a degree, after ticking a box to confirm.
 def _actions(api, credentials, chain_mode):
     if "action_message" in st.session_state:
         level, text = st.session_state.pop("action_message")

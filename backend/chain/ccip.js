@@ -1,5 +1,18 @@
+// =====================================================================================================
+// IN PLAIN ENGLISH
+// -----------------------------------------------------------------------------------------------------
+// This file connects the backend to the REAL blockchains. It:
+//   - issues and revokes degrees by sending transactions to the VeriCert contract on Polygon Amoy
+//     (which then relays them to Avalanche Fuji via Chainlink CCIP),
+//   - verifies degrees by reading the Receiver contract on Avalanche Fuji, and
+//   - digs up on-chain "evidence" (the public log of what happened) for the AI explanation.
+// It also translates technical blockchain errors into plain sentences, and takes care not to waste
+// money on transactions that are bound to fail.
+// =====================================================================================================
 const { ethers } = require("ethers");
 
+// TUNING SETTINGS. Searching the blockchain's history is done in chunks ("blocks" are the pages of the
+// blockchain's ledger; a new one is added every few seconds), and transactions get safety limits.
 // Real chain: VeriCert on Polygon Amoy relays to Receiver on Avalanche Fuji through Chainlink CCIP.
 const ACTION_ISSUE = 1;
 const ACTION_REVOKE = 2;
@@ -17,6 +30,8 @@ const GAS_ESTIMATE_PADDING_PERCENT = 120n; // headroom over the estimate, in cas
 const SEND_CONFIRM_TIMEOUT_MS = 180_000; // tx.wait() would otherwise hang forever on a dropped/underpriced tx
 const INVALID_KEY_MESSAGE = "ISSUER_PRIVATE_KEY is not a valid private key";
 
+// A "menu" of what the backend can ask each contract to do and what announcements (events) it can
+// read from them. This must match the contracts in contracts/contracts/.
 const VERICERT_ABI = [
   "function issue(bytes32 hash) payable returns (bytes32 messageId)",
   "function revoke(bytes32 hash) payable returns (bytes32 messageId)",
@@ -40,6 +55,7 @@ const RECEIVER_ABI = [
   "event CredentialRevoked(bytes32 indexed hash, bytes32 messageId)",
 ];
 
+// Plain-English versions of the reasons the VeriCert contract can refuse a request.
 const FRIENDLY_ERRORS = {
   NotIssuer: "The backend wallet is not an approved issuer on the VeriCert contract",
   ReceiverNotSet: "The VeriCert contract has no Receiver address set",
@@ -50,8 +66,11 @@ const FRIENDLY_ERRORS = {
   RefundFailed: "The VeriCert contract could not refund the excess CCIP fee",
 };
 
+// Settings that must be filled in to use real blockchains: how to connect to each chain, the backend's
+// wallet key (used to sign transactions), and the two contract addresses.
 const requiredEnv = ["AMOY_RPC_URL", "FUJI_RPC_URL", "ISSUER_PRIVATE_KEY", "VERICERT_ADDRESS", "RECEIVER_ADDRESS"];
 
+// The open connections to both blockchains, created the first time they're needed and then reused.
 let clients;
 
 // Never let a malformed ISSUER_PRIVATE_KEY reach a caller via its original ethers error message
@@ -65,6 +84,8 @@ function buildWallet(provider) {
   }
 }
 
+// Connects to Amoy and Fuji (once), loads the backend's wallet, and sets up a handle for each contract:
+// VeriCert on Amoy (with the wallet, so we can send transactions) and Receiver on Fuji (read-only).
 function getClients() {
   if (!clients) {
     // ethers v6 caches reads (incl. getTransactionCount) for 250ms by default; a fast-mining local
@@ -88,6 +109,8 @@ function checkConfig() {
   buildWallet();
 }
 
+// Turns a raw blockchain error into a plain-English one (e.g. "The CCIP fee sent was too low"). The
+// technical notes below explain where the error details hide in different cases.
 function explain(err, veriCert) {
   // send()'s staticCall pre-check (see below) decodes a predictable revert into err.revert directly,
   // so this is the common case. The fallbacks below cover the rarer paths where ethers does not: a
@@ -109,6 +132,10 @@ function explain(err, veriCert) {
   if (err?.code === "INSUFFICIENT_FUNDS") return new Error("The backend wallet has insufficient POL for gas + CCIP fee");
   return err;
 }
+
+// SEARCH HELPERS. The three functions below search the blockchain's public log for a particular
+// announcement, e.g. "when did Fuji receive this degree?". Searching the whole history at once isn't
+// allowed by public blockchain services, so they search chunk by chunk, as efficiently as possible.
 
 // Newest matching event within the last LOG_SEARCH_MAX_BLOCKS blocks, searched backwards in windows.
 async function findLatestEvent(contract, filter) {
@@ -152,6 +179,13 @@ async function recover(veriCert, filter) {
   return { txHash: event.transactionHash, ccipMessageId: event.args.messageId };
 }
 
+// SENDS ONE TRANSACTION to the VeriCert contract (issue or revoke), carefully:
+//   1. Ask the contract for the CCIP fee and add 10%. The contract refunds whatever is left over.
+//   2. Rehearse it for free; if it would be refused, stop now without spending anything.
+//   3. Work out how much "gas" (processing fee) it needs, plus a little headroom.
+//   4. Send it, wait (up to 3 minutes) for the blockchain to confirm it, and pull the CCIP tracking
+//      number out of the receipt.
+// The wallet pays both the CCIP fee and the gas in POL.
 async function send(veriCert, method, action, eventName, credentialHash) {
   const fee = await veriCert.quoteFee(action, credentialHash);
   const value = (fee * FEE_BUFFER_PERCENT) / 100n;
@@ -184,6 +218,8 @@ async function send(veriCert, method, action, eventName, credentialHash) {
   return { txHash: receipt.hash, ccipMessageId: event.args.messageId };
 }
 
+// ISSUE A DEGREE on the real blockchain. If it's already recorded (say, an earlier attempt worked but
+// the reply got lost), find and return that earlier receipt instead of paying to send it again.
 // `issuer` (the university name) is kept in MongoDB; on-chain the issuer is the signing wallet.
 async function issueAndRelay(credentialHash, issuer) {
   const { veriCert } = getClients();
@@ -196,6 +232,7 @@ async function issueAndRelay(credentialHash, issuer) {
   }
 }
 
+// REVOKE A DEGREE on the real blockchain, with the same "don't pay twice" safeguard as issuing.
 async function revokeAndRelay(credentialHash) {
   const { veriCert } = getClients();
   try {
@@ -207,6 +244,9 @@ async function revokeAndRelay(credentialHash) {
   }
 }
 
+// VERIFY A DEGREE: ask the Receiver contract on Fuji whether it knows this fingerprint and whether it
+// has been revoked. Reading from a blockchain is free. (Blockchain times are in seconds; we convert
+// them to milliseconds, which is what the rest of the backend uses.)
 async function verifyOnChain(credentialHash) {
   const { receiver } = getClients();
   const record = await receiver.getCredential(credentialHash);
@@ -266,6 +306,7 @@ async function chainEvidence(credentialHash, { issuer, receivedAt, revoked, revo
   };
 }
 
+// Closes the connections to both blockchains (used when shutting down and in tests).
 async function close() {
   if (!clients) return;
   for (const provider of clients.providers) provider.destroy();

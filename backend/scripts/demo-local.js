@@ -1,3 +1,11 @@
+// IN PLAIN ENGLISH: a self-running demonstration of the whole system on this computer, with no real
+// money or accounts needed. It starts a practice blockchain, puts both contracts on it (with a
+// Chainlink simulator standing in for the cross-chain "postal service"), starts the backend, and then
+// acts out the full story step by step, printing what happens:
+//   someone without permission tries to issue a degree (refused) -> the university issues it ->
+//   issuing it twice is refused -> an employer verifies it -> a tampered copy is caught ->
+//   the university revokes it -> the employer sees it is no longer valid.
+//
 // Local end-to-end demo: deploys VeriCert and Receiver to a local Hardhat node, with Chainlink Local's simulator
 // standing in for CCIP, runs the API in CHAIN_MODE=ccip against them, and walks through issue -> verify -> revoke.
 // Needs no wallet, test tokens or MongoDB install (uses a temporary in-memory database).
@@ -20,6 +28,7 @@ const ARTIFACTS = {
 const ISSUER_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const API_KEY = "demo-admin-key";
 
+// The sample degree used throughout the demo (a fictional student).
 const DEGREE = {
   studentName: "Priya Sharma",
   studentId: "S2024-0117",
@@ -30,11 +39,13 @@ const DEGREE = {
   issuer: "Example University",
 };
 
+// Small helpers for printing the demo's output neatly.
 const say = (text = "") => console.log(text);
 const heading = (n, text) => say(`\n━━ ${n}. ${text} ━━`);
 const short = (value) => (typeof value === "string" && value.length > 20 ? `${value.slice(0, 10)}…${value.slice(-6)}` : String(value));
 const artifactPath = (relative) => path.join(CONTRACTS_DIR, "artifacts", relative);
 
+// Finds an unused network port on this computer, so the demo never clashes with something else running.
 function freePort() {
   return new Promise((resolve, reject) => {
     const probe = net.createServer().listen(0, "127.0.0.1", () => {
@@ -45,6 +56,7 @@ function freePort() {
   });
 }
 
+// Starts a practice blockchain on this computer and waits until it's ready.
 async function startHardhatNode(port) {
   const cli = require.resolve("hardhat/internal/cli/cli.js", { paths: [CONTRACTS_DIR] });
   const child = spawn(process.execPath, [cli, "node", "--port", String(port)], { cwd: CONTRACTS_DIR });
@@ -62,6 +74,7 @@ async function startHardhatNode(port) {
   return child;
 }
 
+// Puts one compiled contract onto the practice blockchain.
 async function deployArtifact(relative, wallet, args) {
   const { abi, bytecode } = JSON.parse(fs.readFileSync(artifactPath(relative), "utf8"));
   const contract = await new ethers.ContractFactory(abi, bytecode, wallet).deploy(...args);
@@ -114,6 +127,7 @@ async function main() {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     say(`API listening on ${baseUrl}`);
 
+    // Sends one request to the backend, the same way the website would (optionally with the admin key).
     async function api(method, route, { body, admin } = {}) {
       const headers = { "content-type": "application/json" };
       if (admin) headers["x-api-key"] = API_KEY;
@@ -170,6 +184,7 @@ async function main() {
 
     say("\nDemo complete.");
   } finally {
+    // Whatever happened, shut everything down cleanly.
     server?.close();
     await chain?.close();
     provider?.destroy();

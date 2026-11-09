@@ -1,3 +1,6 @@
+# IN PLAIN ENGLISH: the "digital certificate" file. When a university issues a degree, the graduate gets
+# a small file containing the degree details and its fingerprint. An employer uploads that file to check
+# it. If anyone edits a detail in the file, the fingerprint no longer matches and the check fails.
 """The credential file a university hands to the graduate, and the employer uploads to verify.
 
 It carries the credential details in plain JSON. Verification always re-hashes
@@ -17,6 +20,8 @@ def parse_courses(text: str) -> list[str]:
     return [course.strip() for course in re.split(r"[,\n]", text or "") if course.strip()]
 
 
+# Creates the certificate file handed to the graduate: a label saying what it is, the degree details,
+# and the official fingerprint.
 def build_file(credential: dict, credential_hash: str) -> bytes:
     document = {
         "format": FORMAT,
@@ -27,6 +32,8 @@ def build_file(credential: dict, credential_hash: str) -> bytes:
     return json.dumps(document, indent=2).encode("utf-8")
 
 
+# Opens a certificate file an employer uploaded, checks it's the right kind of file with all the
+# details present, and pulls out the details and the fingerprint written in it.
 def read_file(data: bytes) -> tuple[dict, str | None]:
     """Returns (credential details, claimed hash) from an uploaded file, or raises ValueError with a readable reason.
 

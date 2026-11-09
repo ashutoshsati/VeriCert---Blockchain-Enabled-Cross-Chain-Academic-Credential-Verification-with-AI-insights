@@ -1,14 +1,22 @@
+// IN PLAIN ENGLISH: this file handles a degree's details. It checks the details are complete and
+// sensible, tidies them up, and turns them into a "fingerprint" (a SHA-256 hash): a 64-character code
+// that is unique to those exact details. Change even one letter and the fingerprint is completely
+// different. That fingerprint, not the personal details, is what goes on the blockchain.
 const crypto = require("crypto");
 
+// The text details every degree must have, and what a valid fingerprint looks like ("0x" + 64 characters).
 const STRING_FIELDS = ["studentName", "studentId", "degree", "major", "issuer"];
 const HASH_PATTERN = /^0x[0-9a-f]{64}$/;
 
+// A special kind of error meaning "the data you sent is wrong" (as opposed to a fault on our side).
 class ValidationError extends Error {}
 
+// Removes extra spaces, e.g. "  Jane   Smith " becomes "Jane Smith".
 function cleanString(value) {
   return value.trim().replace(/\s+/g, " ");
 }
 
+// Puts two pieces of text in alphabetical order (used to sort the course list).
 function compareStrings(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -23,12 +31,14 @@ function parseCredential(body) {
   const errors = [];
   const credential = {};
 
+  // Name, student ID, degree, major and university must all be filled in.
   for (const field of STRING_FIELDS) {
     const value = body[field];
     if (typeof value !== "string" || !value.trim()) errors.push(`${field} is required`);
     else credential[field] = cleanString(value);
   }
 
+  // The graduation year must be a realistic whole number.
   const year = typeof body.year === "string" ? Number(body.year.trim() || NaN) : body.year;
   if (!Number.isInteger(year) || year < 1900 || year > 2100) {
     errors.push("year must be a whole number between 1900 and 2100");
@@ -36,6 +46,7 @@ function parseCredential(body) {
     credential.year = year;
   }
 
+  // Courses are optional, but if given, each one must be a non-empty name.
   const courses = body.courses ?? [];
   if (!Array.isArray(courses) || courses.some((c) => typeof c !== "string" || !c.trim())) {
     errors.push("courses must be a list of non-empty strings");
@@ -43,6 +54,7 @@ function parseCredential(body) {
     credential.courses = courses.map(cleanString);
   }
 
+  // Report every problem at once, so the user can fix them all in one go.
   if (errors.length) throw new ValidationError(errors.join("; "));
   return credential;
 }
@@ -66,6 +78,7 @@ function hashCredential(credential) {
   return "0x" + crypto.createHash("sha256").update(JSON.stringify(canonicalCredential(credential))).digest("hex");
 }
 
+// Checks that a fingerprint someone typed in is in the right format (and lowercases it).
 function normalizeHash(value) {
   const hash = String(value).trim().toLowerCase();
   if (!HASH_PATTERN.test(hash)) {

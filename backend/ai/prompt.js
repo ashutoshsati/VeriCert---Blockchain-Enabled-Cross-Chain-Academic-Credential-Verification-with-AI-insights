@@ -1,6 +1,14 @@
+// IN PLAIN ENGLISH: the "briefing pack" for the AI. It contains:
+//   - the AI's standing instructions (who it's writing for and the rules it must follow — above all,
+//     never contradict the verdict our code decided),
+//   - the exact format its answer must take, and
+//   - the facts it is shown about a degree, with the student's name and ID removed for privacy.
+//
 // What OpenAI is told and shown. The student's name and ID never leave the server.
 const REDACTED_FIELDS = new Set(["studentName", "studentId"]);
 
+// The AI's standing instructions. (Changing this wording automatically stops old saved explanations
+// from being reused, because the wording is part of each explanation's fingerprint.)
 const SYSTEM_INSTRUCTIONS = `You explain degree-verification results from VeriCert to HR recruiters who know nothing about blockchains.
 
 Rules:
@@ -16,6 +24,8 @@ Rules:
 
 Write a summary of 2-3 sentences, up to 5 observations (severity "warning" for anything the recruiter should act on, otherwise "info"), and a one-sentence recommendation for what the recruiter should do next.`;
 
+// The required shape of the AI's answer: a summary, up to five observations each marked "info" or
+// "warning", and one recommendation. OpenAI is made to stick to this format exactly.
 const EXPLANATION_SCHEMA = {
   type: "object",
   properties: {
@@ -38,6 +48,7 @@ const EXPLANATION_SCHEMA = {
   additionalProperties: false,
 };
 
+// Plain meanings of the technical terms, handed to the AI so it can explain them to a recruiter.
 const GLOSSARY = {
   "Polygon Amoy": "the blockchain where the university records the credential",
   "Chainlink CCIP": "the service that carries the record from Polygon Amoy to Avalanche Fuji",
@@ -48,6 +59,8 @@ const GLOSSARY = {
   revoked: "the university withdrew the credential",
 };
 
+// The degree's non-personal details (degree, major, year, courses, university). For a tampered
+// certificate we show the official version, not the altered one.
 function credentialDetails(evidence, verdict) {
   const source = verdict === "tampered" ? evidence.claimedRecord : evidence.record ?? evidence.presented.credential;
   if (!source) return null;
@@ -55,6 +68,9 @@ function credentialDetails(evidence, verdict) {
   return { degree, major, year, courses, issuer };
 }
 
+// Assembles the facts the AI is shown: real or simulated blockchain, the verdict, every check, which
+// details were altered (name and ID changes are reported but their values hidden), the degree's
+// history, the on-chain announcements and the glossary.
 function buildAiInput(evidence, { verdict, checks, fieldChanges }) {
   return {
     network: evidence.mode === "ccip"

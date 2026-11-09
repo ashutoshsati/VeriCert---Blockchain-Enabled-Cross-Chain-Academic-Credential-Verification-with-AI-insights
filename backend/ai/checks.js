@@ -1,7 +1,19 @@
+// =====================================================================================================
+// IN PLAIN ENGLISH
+// -----------------------------------------------------------------------------------------------------
+// This is the "inspector's checklist". Given all the evidence about a degree, it:
+//   1. decides the VERDICT: valid, revoked, tampered (details were altered), relaying (still on its
+//      way between blockchains) or not_found, and
+//   2. runs ten individual CHECKS, each marked passed, failed or skipped, with a one-line reason.
+//      A failed check is either "critical" (a real problem) or a "warning" (worth a look).
+// These are fixed rules written in code, so they always give the same answer for the same evidence
+// and can be tested. The AI never makes these decisions; it only puts them into plain words.
+// =====================================================================================================
 // The code checks behind every /explain answer. Pure functions: the verdict and each check come from
 // here, never from the AI, so they can be tested and trusted on their own.
 const { canonicalCredential } = require("../credential");
 
+// Anything taking longer than 30 minutes to travel between blockchains is flagged as unusual.
 const DELIVERY_LIMIT_MS = 30 * 60 * 1000;
 const MOCK_SKIP = "Mock chain: no on-chain data to compare";
 const FIELD_LABELS = {
@@ -14,6 +26,8 @@ const FIELD_LABELS = {
   issuer: "Issuing university",
 };
 
+// Small helpers: shorten long codes for display, compare wallet addresses, format times and lists, and
+// build a "passed" / "failed" / "skipped" result.
 const short = (value) => (value && value.length > 20 ? `${value.slice(0, 10)}…${value.slice(-6)}` : String(value));
 const time = (value) => new Date(value).getTime();
 const sameAddress = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
@@ -28,6 +42,8 @@ const passed = (id, label, detail) => ({ id, label, status: "passed", severity: 
 const failed = (id, label, severity, detail) => ({ id, label, status: "failed", severity, detail });
 const skipped = (id, label, detail) => ({ id, label, status: "skipped", severity: null, detail });
 
+// Has the degree been revoked (anywhere)? What was the latest log entry of a given kind? Did Fuji
+// announce a given event?
 const isRevoked = (e) => Boolean(e.verification.revoked || e.verification.revocationPending || e.record?.status === "revoked");
 const lastEvent = (e, type) => e.backendEvents.filter((event) => event.eventType === type).at(-1) ?? null;
 const fujiEvent = (e, name) => e.chain?.fujiEvents?.find((event) => event.event === name) ?? null;
@@ -41,6 +57,12 @@ function chainSkipReason(e) {
   return null;
 }
 
+// THE VERDICT, decided in this order of priority:
+//   tampered  - the certificate claims to be a genuine degree, but its details have been changed;
+//   relaying  - issued, still travelling to the verification blockchain;
+//   revoked   - the university cancelled it;
+//   not_found - no such degree was ever issued;
+//   valid     - otherwise: it exists and has not been revoked.
 function decideVerdict(e) {
   const found = e.verification.found === true;
   if (!found && e.claimedHash && e.claimedHash !== e.presented.hash && e.claimedOnChain?.found) return "tampered";
@@ -50,6 +72,7 @@ function decideVerdict(e) {
   return "valid";
 }
 
+// CHECK 1: Is the degree on the verification blockchain (Avalanche Fuji)?
 function onFuji(e) {
   const label = "Recorded on Avalanche Fuji";
   if (e.verification.found) return passed("on-fuji", label, "Avalanche Fuji holds a credential with this hash");
@@ -59,6 +82,7 @@ function onFuji(e) {
   return failed("on-fuji", label, "critical", "Avalanche Fuji has no credential with this hash");
 }
 
+// CHECK 2: Has the degree been revoked (including a revocation that is still on its way)?
 function notRevoked(e) {
   const label = "Not revoked";
   if (isRevoked(e)) {
@@ -71,6 +95,8 @@ function notRevoked(e) {
   return passed("not-revoked", label, "Neither Avalanche Fuji nor the VeriCert database marks it as revoked");
 }
 
+// CHECK 3: Do the issuing blockchain (Amoy) and the verification blockchain (Fuji) tell the same story
+// about who issued it and whether it's revoked?
 function chainsAgree(e) {
   const label = "Amoy and Fuji agree";
   const reason = chainSkipReason(e);
@@ -89,6 +115,8 @@ function chainsAgree(e) {
   return passed("chains-agree", label, "Polygon Amoy and Avalanche Fuji agree on the issuer and revocation status");
 }
 
+// CHECK 4: Is the message Fuji received the very same message the university sent? (Compares the
+// Chainlink tracking numbers on both ends.)
 function ccipMessageMatch(e) {
   const label = "CCIP message matches";
   const reason = chainSkipReason(e);
@@ -108,6 +136,7 @@ function ccipMessageMatch(e) {
   return passed("ccip-message-match", label, `Avalanche Fuji received the same CCIP message the university sent (${short(received.messageId)})`);
 }
 
+// CHECK 5: Is the university wallet that issued it still on the approved list?
 function issuerApproved(e) {
   const label = "Issuer still approved";
   const reason = chainSkipReason(e);
@@ -121,6 +150,7 @@ function issuerApproved(e) {
     : failed("issuer-approved", label, "warning", `The issuing wallet ${wallet} is no longer an approved VeriCert issuer`);
 }
 
+// CHECK 6: Does our database's status for the degree agree with what the blockchain says?
 function dbMatchesChain(e) {
   const label = "Database matches the chain";
   if (!e.record) return skipped("db-matches-chain", label, "No VeriCert database record to compare");
@@ -137,6 +167,7 @@ function dbMatchesChain(e) {
   return failed("db-matches-chain", label, "critical", `The database says "${status}" but Avalanche Fuji ${chainState}`);
 }
 
+// CHECK 7: Do we hold the degree's full details in our database?
 function inDatabase(e) {
   const label = "In the VeriCert database";
   if (!e.verification.found) return skipped("in-database", label, "Nothing on chain to look up");
@@ -145,6 +176,8 @@ function inDatabase(e) {
     : failed("in-database", label, "warning", "On Avalanche Fuji, but the VeriCert database has no details for it (issued elsewhere, or data was lost)");
 }
 
+// CHECK 8: Did the degree reach Fuji within 30 minutes (or, if still travelling, has it been under 30
+// minutes so far)?
 function deliveryTime(e, now) {
   const label = "Delivered promptly";
   const v = e.verification;
@@ -164,6 +197,8 @@ function deliveryTime(e, now) {
   return skipped("delivery-time", label, "No delivery to time");
 }
 
+// CHECK 9: Did things happen in a sensible order (issued, then sent, then delivered)? Out-of-order
+// history could mean the records were interfered with.
 function timelineOrder(e) {
   const label = "Timeline in order";
   const v = e.verification;
@@ -186,6 +221,8 @@ function timelineOrder(e) {
     : passed("timeline-order", label, "Issue, relay and delivery happened in the expected order");
 }
 
+// CHECK 10: If a certificate file was uploaded, do its details still produce the fingerprint written
+// inside it? If not, someone has edited the details.
 function fileHash(e) {
   const label = "File matches its details";
   if (!e.claimedHash) return skipped("file-hash", label, "No credential file was uploaded");
@@ -198,6 +235,8 @@ function fileHash(e) {
     `The file's details don't produce the hash written in it (${short(e.claimedHash)}), and that hash isn't on Avalanche Fuji either`);
 }
 
+// For a tampered certificate: list exactly which details were changed, showing what the certificate
+// says next to what the university officially issued (e.g. Year: 2024 vs 2021).
 function fieldChanges(e, verdict) {
   if (verdict !== "tampered" || !e.presented.credential || !e.claimedRecord) return [];
   const presented = canonicalCredential(e.presented.credential);
@@ -212,6 +251,7 @@ function fieldChanges(e, verdict) {
     }));
 }
 
+// THE MAIN ENTRY POINT: decide the verdict, run all ten checks, and list any altered details.
 function evaluate(evidence, now = Date.now()) {
   const verdict = decideVerdict(evidence);
   const checks = [

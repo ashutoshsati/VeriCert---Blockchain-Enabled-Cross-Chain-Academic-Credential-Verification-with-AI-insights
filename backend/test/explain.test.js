@@ -113,6 +113,14 @@ test("explain does not add verified events to the history", async () => {
   assert.strictEqual(await ProvenanceEvent.countDocuments({ credentialHash: hash, eventType: "verified" }), 0);
 });
 
+test("a file edited to claim a future year is still tampered, not rejected", async () => {
+  const hash = await issue("FUTUREFILE");
+  const year = new Date().getFullYear() + 1;
+  const result = await explain({ ...credential("FUTUREFILE", { year }), claimedHash: hash, ai: false });
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.body.verdict, "tampered");
+});
+
 test("an edited credential file is tampered, with the changed field", async () => {
   const original = await issue("EX3");
   const result = await explain({ ...credential("EX3", { major: "Medicine" }), claimedHash: original, ai: false });

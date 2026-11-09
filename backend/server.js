@@ -24,7 +24,7 @@ const cors = require("cors");
 const crypto = require("crypto");
 const { connectDB, Credential, ProvenanceEvent } = require("./db");
 const chain = require("./chain");
-const { ValidationError, parseCredential, hashCredential, normalizeHash } = require("./credential");
+const { ValidationError, parseCredential, assertYearIssuable, hashCredential, normalizeHash } = require("./credential");
 const { logEvent, checkCredential } = require("./verification");
 const { parseExplainRequest, runExplain } = require("./ai");
 
@@ -71,13 +71,14 @@ function sendAdminError(res, err) {
 }
 
 // ISSUE A DEGREE (admin only).
-// 1. Check the degree details are complete and calculate its fingerprint.
+// 1. Check the degree details are complete, the year isn't in the future, and calculate its fingerprint.
 // 2. Refuse if this degree was already issued; otherwise save it in the database as "pending".
 // 3. Record the fingerprint on the blockchain and send it across to the verification blockchain.
 // 4. Mark it "relaying" (on its way; delivery takes a few minutes) and note it in the activity log.
 app.post("/issue", requireApiKey, async (req, res) => {
   try {
     const credential = parseCredential(req.body);
+    assertYearIssuable(credential);
     const credentialHash = hashCredential(credential);
 
     let record = await Credential.findOne({ credentialHash });

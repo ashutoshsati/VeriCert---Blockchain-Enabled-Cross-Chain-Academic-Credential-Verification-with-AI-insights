@@ -1,8 +1,10 @@
 import json
 import unittest
+from datetime import date
 from unittest import mock
 
 import requests
+from streamlit.testing.v1 import AppTest
 
 from api import ApiResult, VeriCertApi
 from credential_file import build_file, parse_courses, read_file
@@ -171,6 +173,19 @@ class CheckStyleTest(unittest.TestCase):
         self.assertEqual(check_style({"status": "skipped", "severity": None}), ("–", "skip"))
         self.assertEqual(check_style({"status": "failed", "severity": "warning"}), ("⚠", "warn"))
         self.assertEqual(check_style({"status": "failed", "severity": "critical"}), ("✕", "critical"))
+
+
+def _render_issue_form():
+    from views.issue import _issue_form
+
+    _issue_form(None, "mock", "")
+
+
+class IssueFormTest(unittest.TestCase):
+    def test_year_box_stops_at_the_current_year(self):
+        page = AppTest.from_function(_render_issue_form).run()
+        self.assertFalse(page.exception)
+        self.assertEqual(page.number_input[0].max, date.today().year)
 
 
 if __name__ == "__main__":

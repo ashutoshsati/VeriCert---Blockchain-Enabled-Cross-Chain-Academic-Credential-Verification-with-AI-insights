@@ -59,6 +59,13 @@ function parseCredential(body) {
   return credential;
 }
 
+// A degree can't be issued for a year that hasn't happened yet. Only issuing checks this: verification
+// must still accept any year, so a file edited to claim a future year is reported as tampered.
+function assertYearIssuable(credential, now = new Date()) {
+  const currentYear = now.getFullYear();
+  if (credential.year > currentYear) throw new ValidationError(`year cannot be later than ${currentYear}`);
+}
+
 // The normalised form that is hashed: text lowercased and courses sorted, so formatting never changes the hash.
 function canonicalCredential(credential) {
   return {
@@ -87,4 +94,4 @@ function normalizeHash(value) {
   return hash;
 }
 
-module.exports = { ValidationError, parseCredential, canonicalCredential, hashCredential, normalizeHash };
+module.exports = { ValidationError, parseCredential, assertYearIssuable, canonicalCredential, hashCredential, normalizeHash };

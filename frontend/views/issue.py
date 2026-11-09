@@ -79,7 +79,8 @@ def _issue_form(api, chain_mode, default_issuer):
         degree = c3.text_input("Degree", placeholder="Bachelor of Science")
         major = c4.text_input("Major", placeholder="Computer Science")
         c5, c6 = st.columns([1, 2])
-        year = c5.number_input("Year awarded", min_value=1900, max_value=2100, value=date.today().year, step=1)
+        this_year = date.today().year
+        year = c5.number_input("Year awarded", min_value=1900, max_value=this_year, value=this_year, step=1)
         issuer = c6.text_input("Issuing university", value=default_issuer)
         courses = st.text_area("Courses (optional)", placeholder="COMP6002, COMP5001 — separate with commas or new lines")
         submitted = st.form_submit_button("Issue credential", type="primary", width="stretch")

@@ -326,9 +326,9 @@ Set these as environment variables or in `frontend/.streamlit/secrets.toml`, usi
 | Suite | Command | Passing tests |
 |---|---|---|
 | Smart contracts | `cd contracts && npm test` | 26 |
-| Backend | `cd backend && npm test` | 76 |
-| Frontend logic | `cd frontend && python -m unittest discover -s tests -t .` | 21 |
-| **Total** | | **123** |
+| Backend | `cd backend && npm test` | 81 |
+| Frontend logic | `cd frontend && python -m unittest discover -s tests -t .` | 22 |
+| **Total** | | **129** |
 
 Compile the contracts before running the backend tests. Otherwise the backend suite skips its tests against the real contracts:
 
@@ -384,7 +384,7 @@ These examples use bash syntax, which works in Git Bash on Windows.
 
 The transaction and message IDs above are simulated values from mock mode.
 
-Other responses: `400` for invalid details, `401` for a wrong or missing key, and `409` if the credential already exists.
+Other responses: `400` for invalid details or a year after the current one, `401` for a wrong or missing key, and `409` if the credential already exists.
 
 ### Verify a credential
 

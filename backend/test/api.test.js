@@ -87,6 +87,29 @@ test("invalid input is rejected with 400", async () => {
   assert.strictEqual((await call("POST", "/verify", { body: { studentName: "x" } })).status, 400);
 });
 
+test("a future year cannot be issued, and nothing is saved or sent to the chain", async () => {
+  const currentYear = new Date().getFullYear();
+  let sent = false;
+  const result = await withChain(
+    { issueAndRelay: async () => { sent = true; return fakeRelay(); } },
+    () => call("POST", "/issue", { body: credential("FUTURE1", { year: currentYear + 1 }), ...ADMIN })
+  );
+  assert.strictEqual(result.status, 400);
+  assert.strictEqual(result.body.error, `year cannot be later than ${currentYear}`);
+  assert.strictEqual(sent, false);
+  assert.strictEqual(await Credential.countDocuments({ studentId: "FUTURE1" }), 0);
+});
+
+test("the current year can still be issued", async () => {
+  const result = await call("POST", "/issue", { body: credential("THISYEAR1", { year: new Date().getFullYear() }), ...ADMIN });
+  assert.strictEqual(result.status, 200);
+});
+
+test("verifying a future year is not found rather than invalid input", async () => {
+  const result = await call("POST", "/verify", { body: credential("FUTURE2", { year: new Date().getFullYear() + 1 }) });
+  assert.strictEqual(result.status, 404);
+});
+
 test("issued credential verifies by hash (any case) and by document data", async () => {
   const issued = await call("POST", "/issue", { body: credential("V1"), ...ADMIN });
   assert.strictEqual(issued.status, 200);

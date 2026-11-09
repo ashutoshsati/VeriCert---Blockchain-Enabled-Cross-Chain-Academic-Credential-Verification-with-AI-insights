@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { ValidationError, parseCredential, hashCredential, normalizeHash, canonicalCredential } = require("../credential");
+const { ValidationError, parseCredential, hashCredential, normalizeHash, canonicalCredential, assertYearIssuable } = require("../credential");
 
 const base = {
   studentName: "Jane Doe",
@@ -13,6 +13,13 @@ const base = {
 };
 
 const hashOf = (body) => hashCredential(parseCredential(body));
+
+test("a credential can be issued for the current year but not a later one", () => {
+  const newYearsEve = new Date(2026, 11, 31, 23, 59);
+  assert.doesNotThrow(() => assertYearIssuable({ year: 2026 }, newYearsEve));
+  assert.throws(() => assertYearIssuable({ year: 2027 }, newYearsEve), ValidationError);
+  assert.doesNotThrow(() => assertYearIssuable({ year: 2027 }, new Date(2027, 0, 1)));
+});
 
 test("same credential in different formatting gives the same hash", () => {
   const messy = {

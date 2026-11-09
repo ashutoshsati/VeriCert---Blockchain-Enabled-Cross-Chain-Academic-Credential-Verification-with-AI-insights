@@ -1,3 +1,6 @@
+# IN PLAIN ENGLISH: the "Activity" page (university staff only). It shows the most recent 200 things
+# that happened (degrees sent, delivered, verified, revoked), with totals at the top, and lets staff
+# filter the list down to a single degree.
 from collections import Counter
 
 import streamlit as st
@@ -5,9 +8,11 @@ import streamlit as st
 import theme
 from views.common import admin_error, admin_key_missing, show_events
 
+# Show at most this many recent events.
 LIMIT = 200
 
 
+# Draws the page: title, admin key check, optional filter, the four totals, then the history table.
 def render(api, chain_mode):
     theme.page_header(
         "Chainlink CCIP · activity",
@@ -25,6 +30,7 @@ def render(api, chain_mode):
         return
     events = result.body.get("events", [])
 
+    # Count each kind of event for the four summary boxes.
     counts = Counter(event.get("eventType") for event in events)
     cols = st.columns(4)
     for col, (event_type, label) in zip(

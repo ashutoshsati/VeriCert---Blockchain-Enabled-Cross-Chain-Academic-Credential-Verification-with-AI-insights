@@ -1,7 +1,15 @@
+// IN PLAIN ENGLISH: the only part of VeriCert that talks to OpenAI (the AI provider). It sends the
+// verdict, checks and history (never the student's name or ID), asks for a short plain-language
+// explanation in a fixed format, and double-checks the reply has that format before using it.
+// OpenAI is told not to keep a copy ("store: false"). If anything goes wrong, we simply show no AI
+// explanation; the verdict itself never depends on the AI.
+//
 // The one place that talks to OpenAI. Tests replace getClient() with a fake.
 const OpenAI = require("openai");
 const { SYSTEM_INSTRUCTIONS, EXPLANATION_SCHEMA } = require("./prompt");
 
+// Settings: which AI model to use, how long to wait for an answer (30 seconds), the maximum length of
+// the answer, and the maximum number of observations to show.
 const DEFAULT_MODEL = "gpt-6-luna";
 const REQUEST_TIMEOUT_MS = 30_000;
 // Room for the model's own reasoning tokens as well as the answer: 600 cut off about half of the altered-file explanations.
@@ -10,14 +18,18 @@ const MAX_OBSERVATIONS = 5;
 
 let client;
 
+// Is an OpenAI key set up? Which model are we using (from the settings, or the default)?
 const isConfigured = () => Boolean(process.env.OPENAI_API_KEY);
 const modelName = () => process.env.OPENAI_MODEL || DEFAULT_MODEL;
 
+// Connects to OpenAI (once) using our secret key.
 function getClient() {
   client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   return client;
 }
 
+// Checks the AI's reply has the expected shape: a summary, a list of observations (each "info" or
+// "warning"), and a recommendation. Anything else is thrown away.
 function isExplanation(value) {
   return Boolean(value)
     && typeof value.summary === "string" && value.summary.trim() !== ""
@@ -26,6 +38,8 @@ function isExplanation(value) {
     && value.observations.every((o) => o && ["info", "warning"].includes(o.severity) && typeof o.text === "string");
 }
 
+// Asks the AI for an explanation and returns it, or "unavailable" if the AI refused, timed out, was cut
+// short or replied in the wrong format.
 async function generateExplanation(aiInput) {
   try {
     const response = await module.exports.getClient().responses.create(

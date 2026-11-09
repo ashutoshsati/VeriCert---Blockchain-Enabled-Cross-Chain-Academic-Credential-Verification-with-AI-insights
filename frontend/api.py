@@ -1,3 +1,7 @@
+# IN PLAIN ENGLISH: the website's "telephone" to the backend. Each function here makes one kind of
+# request (issue, revoke, verify, explain, list degrees, list activity) and always comes back with an
+# answer, even when the backend is switched off or unreachable, so the website can show a friendly
+# message instead of crashing.
 """Thin client for the VeriCert backend API (backend/server.js).
 
 Every call returns an ApiResult instead of raising, so pages can show a
@@ -28,6 +32,8 @@ FIELD_LABELS = {
 FIELD_PATTERN = re.compile(r"(^|; )(" + "|".join(FIELD_LABELS) + r")\b")
 
 
+# The answer to one request: a status code (e.g. 200 = OK, 404 = not found), the data sent back, and
+# a description of the problem if we couldn't reach the backend at all.
 @dataclass
 class ApiResult:
     status: int | None  # HTTP status, or None when the backend could not be reached
@@ -47,12 +53,14 @@ class ApiResult:
         return FIELD_PATTERN.sub(lambda m: m.group(1) + FIELD_LABELS[m.group(2)], message)
 
 
+# The connection to the backend: its address and (for university staff) the admin key.
 class VeriCertApi:
     def __init__(self, base_url: str, admin_key: str | None = None, session: requests.Session | None = None):
         self.base_url = base_url.rstrip("/")
         self.admin_key = admin_key or None
         self.session = session or requests.Session()
 
+    # Sends one request and turns whatever happens (success, refusal, timeout, no connection) into an ApiResult.
     def _request(self, method, path, *, admin=False, json=None, params=None, timeout=READ_TIMEOUT) -> ApiResult:
         headers = {"x-api-key": self.admin_key} if admin and self.admin_key else {}
         try:
@@ -71,6 +79,8 @@ class VeriCertApi:
             body = {}
         return ApiResult(response.status_code, body)
 
+    # One function per backend request. Issue, revoke and the two lists need the admin key; verify and
+    # explain are open to anyone. Writing to the blockchain can take minutes, so those wait longest.
     def health(self) -> ApiResult:
         return self._request("GET", "/health", timeout=5)
 

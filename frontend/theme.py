@@ -1,3 +1,7 @@
+# IN PLAIN ENGLISH: the website's look and feel: colours, fonts and the reusable visual pieces (page
+# headings, summary boxes, coloured verdict banners, the checks list, the AI summary card). It also
+# turns technical values into friendly ones, e.g. "relaying" -> "In transit", and makes links to
+# public blockchain explorer websites. Anything typed by users is made safe before being displayed.
 """Look and feel: the "Obsidian Trust" palette from DESIGN.md plus small HTML building blocks.
 
 Every value placed into HTML goes through html.escape, because credential details are user input.
@@ -8,6 +12,7 @@ from html import escape
 
 import streamlit as st
 
+# The style sheet: colours, fonts, spacing and shapes for every visual element on the site.
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -79,8 +84,10 @@ section[data-testid="stSidebar"] { background-color: #0e0e10; border-right: 1px 
 </style>
 """
 
+# Banner colours: green for genuine, amber for "in transit" or input problems, red for everything else.
 BANNER_STYLE = {"valid": "vc-good", "relaying": "vc-warn", "invalid_input": "vc-warn"}
 
+# Friendly names for degree statuses, blockchains and history events.
 STATUS_LABELS = {
     "active": "Delivered",
     "relaying": "In transit",
@@ -99,14 +106,18 @@ EVENT_LABELS = {
 }
 
 
+# Applies the style sheet to the page.
 def inject():
     st.markdown(CSS, unsafe_allow_html=True)
 
 
+# Places a piece of styled content on the page.
 def _html(markup: str):
     st.markdown(markup, unsafe_allow_html=True)
 
 
+# VISUAL BUILDING BLOCKS used by the pages:
+# Page heading: small label, big title and a one-line description.
 def page_header(eyebrow: str, title: str, subtitle: str):
     _html(
         f'<div class="vc-eyebrow"><span class="dot">●</span> {escape(eyebrow)}</div>'
@@ -115,6 +126,7 @@ def page_header(eyebrow: str, title: str, subtitle: str):
     )
 
 
+# A summary box with a big number, e.g. "Revoked: 3".
 def metric(label: str, value, sub: str | None = None):
     sub_html = f'<div class="vc-metric-sub">{escape(sub)}</div>' if sub else ""
     _html(
@@ -123,11 +135,13 @@ def metric(label: str, value, sub: str | None = None):
     )
 
 
+# A box showing a degree's fingerprint code (greyed out when the degree isn't valid).
 def hash_box(label: str, value: str, muted: bool = False):
     style = "vc-hash muted" if muted else "vc-hash"
     _html(f'<div class="vc-label">{escape(label)}</div><div class="{style}">{escape(value)}</div>')
 
 
+# The coloured verdict banner, e.g. a green "Genuine credential".
 def banner(kind: str, title: str, message: str):
     style = BANNER_STYLE.get(kind, "vc-bad")
     _html(
@@ -136,6 +150,7 @@ def banner(kind: str, title: str, message: str):
     )
 
 
+# A grid of label/value pairs, e.g. "Degree: Bachelor of Science".
 def fields(pairs: list[tuple[str, str]]):
     cells = "".join(
         f'<div class="vc-field"><div class="vc-label">{escape(label)}</div>'
@@ -145,6 +160,7 @@ def fields(pairs: list[tuple[str, str]]):
     _html(f'<div class="vc-fields">{cells}</div>')
 
 
+# The icon for each check: ✓ passed, – skipped, ✕ critical failure, ⚠ warning.
 def check_style(check: dict) -> tuple[str, str]:
     if check.get("status") == "passed":
         return "✓", "pass"
@@ -153,6 +169,7 @@ def check_style(check: dict) -> tuple[str, str]:
     return ("✕", "critical") if check.get("severity") == "critical" else ("⚠", "warn")
 
 
+# The list of automatic checks, each with its icon, name and one-line reason.
 def checks_panel(checks: list[dict]):
     rows = []
     for check in checks:
@@ -165,6 +182,8 @@ def checks_panel(checks: list[dict]):
     _html(f'<div class="vc-checks">{"".join(rows)}</div>')
 
 
+# The AI summary card: summary, observations, recommendation, and a note that the AI only explains
+# the checks and doesn't decide them.
 def ai_card(explanation: dict, model: str | None, cached: bool):
     observations = "".join(
         f'<div class="vc-ai-obs {"warning" if item.get("severity") == "warning" else "info"}">{escape(item.get("text", ""))}</div>'
@@ -180,6 +199,8 @@ def ai_card(explanation: dict, model: str | None, cached: bool):
     )
 
 
+# FORMATTING HELPERS:
+# Shortens a long code for display, e.g. "0x1234abcd…9f8e7d".
 def short_hash(value: str | None) -> str:
     if not value:
         return "—"
@@ -200,6 +221,8 @@ def format_time(value) -> str:
         return str(value)
 
 
+# Links to public websites where anyone can independently look up a blockchain transaction
+# (PolygonScan) or follow a cross-chain message (Chainlink's CCIP Explorer).
 def amoy_tx_url(tx_hash: str | None) -> str | None:
     return f"https://amoy.polygonscan.com/tx/{tx_hash}" if tx_hash else None
 

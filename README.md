@@ -10,7 +10,7 @@ VeriCert lets a university issue a degree as a tamper-evident record, and lets a
 ![Node.js 20.19+](https://img.shields.io/badge/Node.js-20.19%2B-339933)
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 
-Built by Group 15 for COMP6002 (Computer Science Project), Semester 2, 2026.
+Built by Group 15 for COMP6002 (Computer Science Project), Semester 2, 2026 at Curtin University.
 
 > [!IMPORTANT]
 > **Project status: academic prototype.** The contracts are deployed on the Polygon Amoy and Avalanche Fuji testnets (see [Deployed contracts](#deployed-contracts)). The full workflow has been tested in mock mode and against the real contracts on a local Hardhat chain, with Chainlink Local simulating CCIP. This repository doesn't yet include a recorded delivery across the public testnets. The app runs locally, isn't hosted online, and is not intended for production.
